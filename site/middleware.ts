@@ -12,13 +12,18 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
  * any time. A notification email fires to NOTIFY_EMAIL the first time any
  * new address signs in, so you know to go check.
  *
- * Auth-flow pages (/login, /auth/callback, /preview) bypass the gate so the
- * redirect loop has somewhere to land. Static assets under /content/,
- * /_next/*, and favicon.ico never hit this middleware at all (see
- * `config.matcher` below) — gating video byte-range requests would be
- * wasteful and can break seeking.
+ * /login and /auth/callback bypass the gate entirely — they must be
+ * reachable before a session exists at all, otherwise there's no way to
+ * ever reach the login page. /preview is deliberately NOT in this list even
+ * though it's also part of the auth flow: it still needs to go through the
+ * access check below so a since-approved user gets bounced to "/" instead
+ * of refreshing back into /preview forever (an unconditional bypass here
+ * used to make that redirect permanently unreachable — see line ~105).
+ * Static assets under /content/, /_next/*, and favicon.ico never hit this
+ * middleware at all (see `config.matcher` below) — gating video byte-range
+ * requests would be wasteful and can break seeking.
  */
-const BYPASS_PATHS = ["/login", "/auth/callback", "/preview"];
+const BYPASS_PATHS = ["/login", "/auth/callback"];
 
 // What a brand-new sign-in's `access` starts as. This is an explicit value
 // in the insert below, not the database column's default — changing the
