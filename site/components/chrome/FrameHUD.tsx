@@ -30,10 +30,12 @@ export default function FrameHUD() {
           aria-pressed={!muted}
           aria-label={muted ? "Unmute video sound" : "Mute video sound"}
         >
-          {muted ? "\u{1F507} Sound off" : "\u{1F50A} Sound on"}
+          <span aria-hidden>{muted ? "\u{1F507}" : "\u{1F50A}"}</span>
+          <span className="hidden sm:inline">{muted ? "Sound off" : "Sound on"}</span>
         </button>
         <a href="#reels" className="btn-pill btn-pill--outline text-ui-sm">
-          &#9656; Play
+          <span aria-hidden>&#9656;</span>
+          <span className="hidden sm:inline">Play</span>
         </a>
         <a href="#book" className="btn-pill btn-pill--solid hidden text-ui-sm sm:inline-flex">
           Book a call
