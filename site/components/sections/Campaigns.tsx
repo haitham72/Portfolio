@@ -88,6 +88,7 @@ function EditionCard({ edition, colorIndex }: { edition: CampaignEdition; colorI
                 poster={slide.poster ?? undefined}
                 controls
                 autoPlay
+                playsInline
                 className="h-full w-full object-cover"
               />
             ) : slide ? (
@@ -117,7 +118,7 @@ function CampaignRow({ group, baseColor }: { group: CampaignGroup; baseColor: nu
         {group.editions.map((edition, i) => (
           <div key={edition.slug} className="flex shrink-0 items-center gap-3">
             {i > 0 && (
-              <span aria-hidden className="hidden pb-24 text-xl text-text-alt/30 sm:block">
+              <span aria-hidden className="pb-16 text-xl text-text-alt/30 sm:pb-24">
                 &rarr;
               </span>
             )}
