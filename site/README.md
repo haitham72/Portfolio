@@ -134,7 +134,7 @@ these are referenced by any section yet. The Ramadan set in particular maps natu
   right (desktop), name/bio/brief/contact-form stacked on the left. Not pinned (a form doesn't
   suit a scroll-jacked panel).
 - **Contact info** — real, centralized in `lib/placeholders.ts`'s `SITE` object:
-  `ihisam@outlook.com`, `+971 50 370 6142`, `linkedin.com/in/haithammohamed`, Dubai UAE.
+  `ihisam@outlook.com`, `+971 50 370 6142`, `linkedin.com/in/haitham72`, Dubai UAE.
 - Reduced-motion is handled at the primitive level everywhere (`MotionConfig reducedMotion="user"`
   app-wide, Lenis disabled, video autoplay replaced with poster + native controls, Ticker frozen),
   not bolted on as an afterthought.

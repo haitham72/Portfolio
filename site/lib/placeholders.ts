@@ -15,7 +15,7 @@ export const SITE = {
   email: "ihisam@outlook.com",
   phone: "+971 50 370 6142",
   phoneHref: "+971503706142",
-  linkedin: "https://www.linkedin.com/in/haithammohamed",
+  linkedin: "https://www.linkedin.com/in/haitham72",
   location: "Dubai, UAE",
 } as const;
 
