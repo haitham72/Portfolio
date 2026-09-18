@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import Header from "./Header";
 import FrameHUD from "./FrameHUD";
+import SoundPrompt from "./SoundPrompt";
 import Cursor from "./Cursor";
 
 // Header/FrameHUD link to anchors (#selected-work, #book, ...) that only
@@ -19,6 +20,7 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
   return (
     <>
       <Cursor />
+      <SoundPrompt />
       <Header />
       {children}
       <FrameHUD />
