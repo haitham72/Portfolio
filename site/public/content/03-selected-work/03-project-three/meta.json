@@ -1,13 +1,13 @@
 {
-  "title": "Flight",
-  "client": "Client TBC",
-  "type": "3D & Compositing",
+  "title": "Eid Adha",
+  "client": "Sheikh Hamdan Bin Mohamed",
+  "type": "Ai Creative",
   "year": "2026",
-  "category": "3D & Compositing",
+  "category": "Ai Creative Media",
   "ratio": "9:16",
-  "brief": "Placeholder brief text — replace with the real project brief.",
-  "approach": "Placeholder approach text — replace with the real project approach.",
-  "system": "Placeholder system text — replace with the real production system/pipeline notes.",
-  "result": "Placeholder result text — replace with the real outcome.",
-  "stockPlaceholder": true
+  "brief": "Video shoot from Dubai Metro for Fathers Day.",
+  "approach": "Iphone and tracking",
+  "system": "Faz3",
+  "result": "realistic vfx.",
+  "stockPlaceholder": false
 }

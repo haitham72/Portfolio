@@ -90,10 +90,20 @@ export function listNumberedFiles(dir: string): OrderedEntry[] {
     .sort((a, b) => a.order - b.order);
 }
 
+// When set, media URLs point at Supabase Storage's public bucket instead of
+// Vercel's own static hosting — set it to
+// "https://<project-ref>.supabase.co/storage/v1/object/public" (bucket name
+// "content" is what completes the path; run
+// scripts/sync-content-to-supabase.mjs to mirror public/content/ into it).
+// Unset (local dev, or before you've synced) falls back to the local
+// /content/... path exactly as before — nothing changes until this is set.
+const MEDIA_BASE_URL = process.env.MEDIA_BASE_URL?.replace(/\/$/, "") ?? "";
+
 /** Public URL for a path under public/content. */
 export function toPublicUrl(fullPath: string): string {
   const rel = path.relative(path.join(process.cwd(), "public"), fullPath);
-  return "/" + rel.split(path.sep).join("/");
+  const relUrl = "/" + rel.split(path.sep).join("/");
+  return MEDIA_BASE_URL ? MEDIA_BASE_URL + relUrl : relUrl;
 }
 
 export function readMetaJson(dir: string): Record<string, unknown> {
