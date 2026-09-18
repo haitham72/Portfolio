@@ -76,7 +76,14 @@ interface SlideProps {
  * segments are what was missing, not more scroll height in general.
  */
 function Slide({ project, index, total, isActive, scrollYProgress }: SlideProps) {
-  const segments = 2 * total - 1; // one dwell per slide + one enter per slide-after-the-first
+  // 2*total units: one dwell + one enter per slide-after-the-first (2*total-1
+  // units) *plus one extra unit reserved purely as final dwell* — the last
+  // slide's own enter still ends at unit (2*total-2), same relative spot as
+  // before, but because the total unit count grew there's a genuinely idle
+  // unit of scroll after it (v from (2*total-2)/segments to 1) before the
+  // pin releases into the next section, instead of just the same single
+  // dwell unit every other slide gets. Doubles its settle time on request.
+  const segments = 2 * total;
   const unit = 1 / segments;
   const isLast = index === total - 1;
 
@@ -191,7 +198,7 @@ export default function SelectedWork({ projects: real }: { projects: WorkProject
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const segments = 2 * total - 1;
+  const segments = 2 * total; // matches Slide's own `segments` — see its comment
 
   useMotionValueEvent(scrollYProgress, "change", (v) => {
     // Same segment numbering as Slide's own windows (see its comment): the

@@ -8,6 +8,17 @@ import Lightbox from "@/components/media/Lightbox";
 import { gradientFor } from "@/lib/placeholders";
 import type { CampaignEdition, CampaignGroup } from "@/lib/content";
 
+/**
+ * The grid preview here always stays muted (`forceMuted`), regardless of
+ * the global sound toggle — several of these can be on screen/nearly
+ * visible at once, and letting them all compete for audio (with each
+ * other, and with the modal's own video once opened) is exactly the
+ * "plays over everything" problem. The Lightbox modal below is the
+ * opposite case on purpose: it's a single focused video the visitor
+ * explicitly opened, so it plays with sound unconditionally (no `muted`
+ * attribute at all) — clicking to open it is itself the user gesture
+ * browsers require to allow that.
+ */
 function EditionCard({ edition, colorIndex }: { edition: CampaignEdition; colorIndex: number }) {
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState(false);
@@ -27,7 +38,13 @@ function EditionCard({ edition, colorIndex }: { edition: CampaignEdition; colorI
       >
         {slide ? (
           slide.kind === "video" ? (
-            <LazyVideo src={slide.src} poster={slide.poster} className="h-full w-full" gradient={gradientFor(colorIndex)} />
+            <LazyVideo
+              src={slide.src}
+              poster={slide.poster}
+              className="h-full w-full"
+              gradient={gradientFor(colorIndex)}
+              forceMuted
+            />
           ) : (
             <PosterImage src={slide.src} alt={edition.title} className="h-full w-full" gradient={gradientFor(colorIndex)} />
           )

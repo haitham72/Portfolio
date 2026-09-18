@@ -5,6 +5,7 @@ import { AnimatePresence, motion, useScroll, useMotionValueEvent } from "motion/
 import SectionHeader from "@/components/motion/SectionHeader";
 import SplitText from "@/components/motion/SplitText";
 import PhoneFrame from "@/components/media/PhoneFrame";
+import { useSound, claimExclusiveSound } from "@/components/chrome/SoundProvider";
 import { gradientFor } from "@/lib/placeholders";
 import { ease, prefersReducedMotion } from "@/lib/motion";
 import type { ReelItem } from "@/lib/content";
@@ -43,6 +44,7 @@ export default function Reels({ reels }: { reels: ReelItem[] }) {
   const [dir, setDir] = useState(1);
   const [runtime, setRuntime] = useState<string>("--:--");
   const [reduced, setReduced] = useState(false);
+  const { muted } = useSound();
 
   useEffect(() => setReduced(prefersReducedMotion()), []);
 
@@ -66,6 +68,33 @@ export default function Reels({ reels }: { reels: ReelItem[] }) {
     if (!v) return;
     if (v.readyState >= 1) setRuntime(formatRuntime(v.duration));
   }, [active]);
+
+  // The actual bug behind "audio plays over itself after leaving the
+  // section": unlike LazyVideo (used everywhere else), this raw <video>
+  // had no visibility gating at all — autoPlay+loop with nothing to pause
+  // it once the whole Reels track scrolls out of view, so it just kept
+  // playing (and producing sound, once unmuted) indefinitely in the
+  // background while later sections' videos also started playing.
+  // claimExclusiveSound is the backstop on top of that: whichever video
+  // most recently became visible always wins sound, full stop, regardless
+  // of whether some other section's own pause-on-leave logic has caught up yet.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          claimExclusiveSound(v); // becoming active — silence every other managed video now
+          v.play().catch(() => {});
+        } else {
+          v.pause();
+        }
+      },
+      { threshold: 0.1 },
+    );
+    io.observe(v);
+    return () => io.disconnect();
+  }, [current.slug]);
 
   // 160vh per reel (was 100) + a final 0.5-page buffer so the last one
   // holds still before the pin releases. Reels don't have Selected Work's
@@ -123,10 +152,11 @@ export default function Reels({ reels }: { reels: ReelItem[] }) {
                   {hasMedia && (
                     <video
                       ref={videoRef}
+                      data-sound-managed="true"
                       className="h-full w-full object-cover"
                       src={current.poster ? current.src : `${current.src}#t=0.1`}
                       poster={current.poster ?? undefined}
-                      muted
+                      muted={muted}
                       loop={!reduced}
                       autoPlay={!reduced}
                       controls={reduced}

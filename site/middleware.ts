@@ -4,13 +4,13 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 
 /**
  * Private-preview gate. Everything requires Google sign-in; every signed-in
- * email is recorded in Supabase's `users` table with access=false on first
- * sign-in and routed to /preview (a stripped-down look at the site, not the
- * real thing) until you flip the row's `access` checkbox to true in the
- * Supabase dashboard's Table Editor — there's no admin UI in the app itself
- * by design, you're editing the table directly, any time. A notification
- * email fires to NOTIFY_EMAIL the first time any new address signs in, so
- * you know to go check.
+ * email is recorded in Supabase's `users` table with access=DEFAULT_ACCESS
+ * on first sign-in (see below) and routed to /preview (a stripped-down
+ * look at the site, not the real thing) until you flip the row's `access`
+ * checkbox to true in the Supabase dashboard's Table Editor — there's no
+ * admin UI in the app itself by design, you're editing the table directly,
+ * any time. A notification email fires to NOTIFY_EMAIL the first time any
+ * new address signs in, so you know to go check.
  *
  * Auth-flow pages (/login, /auth/callback, /preview) bypass the gate so the
  * redirect loop has somewhere to land. Static assets under /content/,
@@ -19,6 +19,16 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
  * wasteful and can break seeking.
  */
 const BYPASS_PATHS = ["/login", "/auth/callback", "/preview"];
+
+// What a brand-new sign-in's `access` starts as. This is an explicit value
+// in the insert below, not the database column's default — changing the
+// column default in Supabase alone would do nothing, since an explicit
+// value in the insert always wins. Set DEFAULT_ACCESS=true in .env.local
+// (and restart the dev server — env vars only load at startup) while
+// you're testing so you don't have to hand-approve every throwaway
+// account; set it back to false (or just remove it — false is the
+// fallback) before sharing the link with anyone else.
+const DEFAULT_ACCESS = process.env.DEFAULT_ACCESS === "true";
 
 async function notifyNewSignIn(email: string, ip: string) {
   const apiKey = process.env.RESEND_API_KEY;
@@ -81,13 +91,13 @@ export async function middleware(request: NextRequest) {
   const { data: existing } = await service.from("users").select("access").eq("email", user.email).maybeSingle();
 
   if (!existing) {
-    await service.from("users").insert({ email: user.email, ip, access: false });
+    await service.from("users").insert({ email: user.email, ip, access: DEFAULT_ACCESS });
     await notifyNewSignIn(user.email, ip);
   } else {
     await service.from("users").update({ ip, last_seen_at: new Date().toISOString() }).eq("email", user.email);
   }
 
-  const access = existing?.access ?? false;
+  const access = existing?.access ?? DEFAULT_ACCESS;
 
   if (!access && pathname !== "/preview") {
     return NextResponse.redirect(new URL("/preview", request.url));
