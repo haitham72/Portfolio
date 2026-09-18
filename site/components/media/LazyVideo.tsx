@@ -13,24 +13,26 @@ interface LazyVideoProps {
   forceMuted?: boolean;
 }
 
+/** Visibility-gated video with a play-only fallback; no pause overlay is shown. */
 export default function LazyVideo({ src, poster, className = "", ratio = "16:9", gradient, forceMuted = false }: LazyVideoProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [nearView, setNearView] = useState(false);
   const [ready, setReady] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const [reduced, setReduced] = useState(false);
   const { muted: soundMuted } = useSound();
   const muted = forceMuted || soundMuted;
 
   useEffect(() => setReduced(prefersReducedMotion()), []);
 
-  const tryPlay = () => {
+  function tryPlay() {
     const video = videoRef.current;
     if (!video || reduced || document.hidden) return;
     video.muted = muted;
     if (!forceMuted) claimExclusiveSound(video);
-    video.play().catch(() => {});
-  };
+    video.play().catch(() => setPlaying(false));
+  }
 
   useEffect(() => {
     const element = wrapperRef.current;
@@ -38,20 +40,17 @@ export default function LazyVideo({ src, poster, className = "", ratio = "16:9",
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) {
         setNearView(true);
-        // The video may not exist until the state update commits. The effect
-        // below and the media readiness handlers cover that second tick.
         tryPlay();
       } else {
         videoRef.current?.pause();
+        setPlaying(false);
       }
     }, { rootMargin: "200px 0px", threshold: 0 });
     observer.observe(element);
     return () => observer.disconnect();
   }, [reduced, muted, forceMuted]);
 
-  useEffect(() => {
-    if (nearView) tryPlay();
-  }, [nearView, reduced, muted, forceMuted]);
+  useEffect(() => { if (nearView) tryPlay(); }, [nearView, reduced, muted, forceMuted]);
 
   useEffect(() => {
     const onVisibility = () => document.hidden ? videoRef.current?.pause() : tryPlay();
@@ -64,7 +63,37 @@ export default function LazyVideo({ src, poster, className = "", ratio = "16:9",
 
   return (
     <div ref={wrapperRef} className={`relative overflow-hidden ${aspectClass} ${className}`} style={!poster && !ready ? { background: gradient } : undefined}>
-      {nearView && <video ref={videoRef} data-sound-managed={forceMuted ? undefined : "true"} className="absolute inset-0 h-full w-full object-cover" muted={muted} autoPlay={!reduced} loop={!reduced} controls={reduced} playsInline preload="auto" poster={poster ?? undefined} src={effectiveSrc} onLoadedData={() => { setReady(true); tryPlay(); }} onCanPlay={tryPlay} />}
+      {nearView && (
+        <video
+          ref={videoRef}
+          data-sound-managed={forceMuted ? undefined : "true"}
+          className="absolute inset-0 h-full w-full object-cover"
+          muted={muted}
+          autoPlay={!reduced}
+          loop={!reduced}
+          controls={reduced}
+          playsInline
+          preload="auto"
+          poster={poster ?? undefined}
+          src={effectiveSrc}
+          onLoadedData={() => { setReady(true); tryPlay(); }}
+          onCanPlay={tryPlay}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+        />
+      )}
+      {nearView && !playing && !reduced && (
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label="Play video"
+          className="absolute left-1/2 top-1/2 z-10 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-text-hi/70 bg-bg/70 text-2xl text-text-hi backdrop-blur-sm"
+          onClick={(event) => { event.stopPropagation(); tryPlay(); }}
+          onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); tryPlay(); } }}
+        >
+          <span aria-hidden className="translate-x-0.5">▶</span>
+        </span>
+      )}
     </div>
   );
 }
