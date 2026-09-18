@@ -14,12 +14,27 @@ export function useSound(): SoundContextValue {
   return useContext(SoundContext);
 }
 
-const UNLOCK_EVENTS = ["pointerdown", "keydown", "touchstart", "wheel"] as const;
+// "wheel" removed on purpose — it doesn't reliably count as a strong-enough
+// gesture for the browser to actually honor unmuting an already-playing
+// video, even run synchronously inside the handler. The mutation didn't
+// throw and didn't pause anything (that part's fixed), it just silently
+// didn't take effect, which is exactly "have to toggle sound off/on myself
+// before I hear anything" — a real click on the toggle IS unambiguously
+// valid, so that always worked. pointerdown/touchstart/keydown are all
+// unambiguously valid gestures for this specific browser permission.
+const UNLOCK_EVENTS = ["pointerdown", "keydown", "touchstart"] as const;
 
 /** Videos LazyVideo/Reels mark as sound-managed (excludes `forceMuted` ones like Campaigns' grid previews). */
 const MANAGED_SELECTOR = "video[data-sound-managed='true']";
 
+// Module-level, not React state — claimExclusiveSound runs from
+// IntersectionObserver callbacks, which fire outside any component render
+// and must read the *current* desired mute state synchronously, not
+// whatever a React closure happened to capture when the effect was set up.
+let currentlyMuted = true;
+
 function applyMutedToDom(value: boolean) {
+  currentlyMuted = value;
   document.querySelectorAll<HTMLVideoElement>(MANAGED_SELECTOR).forEach((v) => {
     v.muted = value;
   });
@@ -28,21 +43,27 @@ function applyMutedToDom(value: boolean) {
 /**
  * Call this from a video's own "I just became the visible/active one"
  * moment (LazyVideo's and Reels' IntersectionObserver callbacks, on
- * entering view) — mutes every *other* sound-managed video immediately.
+ * entering view) — mutes every *other* sound-managed video immediately,
+ * and explicitly (re-)asserts *this* video's own mute state against the
+ * authoritative `currentlyMuted` value rather than trusting whatever its
+ * `muted` prop happened to already be. That explicit reassertion is the
+ * self-correcting part: if a video mounted before sound was unlocked and
+ * somehow never picked up the change, becoming active fixes it on the spot
+ * instead of silently staying wrong.
  *
- * Why this exists: the global mute toggle alone only answers "is sound on
- * or off," not "which of several simultaneously-playing videos should be
- * the one actually making noise." Two sections can legitimately both be
- * "playing" for a moment (e.g. mid-scroll, or if one's pause-on-leave
- * observer hasn't fired yet) — this is the explicit tie-breaker: whichever
- * video most recently became active wins, unconditionally, regardless of
- * what any per-section visibility logic did or didn't already handle.
- * Deliberately mutes rather than pauses the losers — they keep looping
- * silently rather than getting stuck paused with no trigger to resume.
+ * Why this exists at all: the global mute toggle alone only answers "is
+ * sound on or off," not "which of several simultaneously-playing videos
+ * should be the one actually making noise." Two sections can legitimately
+ * both be "playing" for a moment (e.g. mid-scroll, or if one's
+ * pause-on-leave observer hasn't fired yet) — this is the explicit
+ * tie-breaker: whichever video most recently became active wins,
+ * unconditionally. Deliberately mutes rather than pauses the losers — they
+ * keep looping silently rather than getting stuck paused with no trigger
+ * to resume.
  */
 export function claimExclusiveSound(video: HTMLVideoElement) {
   document.querySelectorAll<HTMLVideoElement>(MANAGED_SELECTOR).forEach((v) => {
-    if (v !== video) v.muted = true;
+    v.muted = v !== video ? true : currentlyMuted;
   });
 }
 
