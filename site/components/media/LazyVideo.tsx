@@ -42,6 +42,13 @@ interface LazyVideoProps {
  * mutes every other sound-managed video immediately, so whichever section
  * you're actually looking at is always the only one making noise,
  * regardless of what any other section's own pause-on-leave timing did.
+ *
+ * Critical fix: the video only mounts after `nearView` flips to true. The
+ * first intersection callback can fire before the rendered DOM node exists,
+ * so the browser may never get a valid autoplay opportunity from the first
+ * observer pass. The extra `nearView` effect replays the start sequence once
+ * the mounted element exists, which is the reliable path for the initial hero
+ * and first work slides.
  */
 export default function LazyVideo({ src, poster, className = "", ratio = "16:9", gradient, forceMuted = false }: LazyVideoProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -75,6 +82,19 @@ export default function LazyVideo({ src, poster, className = "", ratio = "16:9",
     io.observe(el);
     return () => io.disconnect();
   }, [reduced, forceMuted]);
+
+  useEffect(() => {
+    if (!nearView || reduced) return;
+    const v = videoRef.current;
+    if (!v) return;
+
+    v.muted = muted;
+    if (!forceMuted) claimExclusiveSound(v);
+
+    if (v.paused) {
+      v.play().catch(() => {});
+    }
+  }, [nearView, reduced, muted, forceMuted]);
 
   const effectiveSrc = poster ? src : `${src}#t=0.1`;
   const aspectClass = ratio === "9:16" ? "aspect-[9/16]" : ratio === "1:1" ? "aspect-square" : "aspect-video";
