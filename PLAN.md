@@ -1,352 +1,433 @@
-# HaithamMotion — Build Plan
+# HaithamMotion — Build and Reliability Plan
 
-**Target:** motion-graphic-designer portfolio, live before the Fujairah interview (1–2 weeks).
-**Reference:** `anamorph.framer.website` (Framer template by Hamza Ehsan, $129).
-**Status:** not started. `3-prompts-plan.md` is superseded by this file — it assumed Base44/Supabase + an admin dashboard. Both are cut.
+**Target:** a cinematic motion-graphic-designer portfolio that feels deliberate on desktop, tablet, and iPhone/iPad Safari.
+
+**Stack:** Next.js 15 App Router, TypeScript, Tailwind v4, `motion`, Lenis, filesystem content under `site/public/content/`, deployed through Vercel.
+
+**Primary goal of this revision:** document the real responsive, media, and mobile-browser risks discovered during review, especially the Hero, Selected Work/mobile frame, Campaigns, and iOS Safari paths. This document is an implementation plan and QA contract; it is not a substitute for testing the deployed page on physical devices.
 
 ---
 
-## 0. Decisions locked (2026-09-18)
+## 0. Current findings and decisions
 
-| Decision | Value | Why |
+### 0.1 Confirmed problem areas
+
+1. **Hero alignment on tablet and laptop**
+   - The Hero is visually left-heavy at intermediate widths.
+   - This is not necessarily a media problem. It is a composition problem caused by the hero copy, overlay layers, and portrait card being positioned independently rather than inside a responsive composition grid.
+   - Desktop must retain the editorial left anchor, but tablet must not look like a desktop layout compressed into a narrow viewport.
+
+2. **Hero autoplay is unreliable on first load**
+   - Hero uses `LazyVideo`.
+   - The wrapper is observed before the conditional `<video>` exists. The first IntersectionObserver callback sets `nearView`, then the video mounts on the following React render. The callback cannot operate on the node that did not exist yet.
+   - Native `autoPlay` may start, but relying on that alone makes the first visible video less reliable than videos mounted after later observer callbacks.
+   - `LazyVideo` now has a post-mount playback effect that retries `play()` after `nearView` has mounted the element. This must remain covered by tests and device QA.
+
+3. **Selected Work autoplay is especially sensitive**
+   - Selected Work renders only the active slide's video; inactive slides render a poster.
+   - `activeIndex` is derived from scroll progress. On initial load, the first slide is active, but the video is still mounted conditionally inside `LazyVideo`, creating the same mount/observer timing race as Hero.
+   - The selected-work frame is vertical and must remain a centered device-like composition, not become a stretched full-bleed desktop video.
+   - Every active slide needs a poster fallback while the video is loading and a predictable pause when it becomes inactive or leaves the viewport.
+
+4. **Campaign previews autoplay more consistently, but their first visual frame is too square**
+   - Campaign cards currently use `aspect-[4/5]`, which is close to square and determines the first rendered frame before the media has fully painted.
+   - Campaign media needs a deliberate “full frame, not full screen” ratio. Use the source/media ratio where known; otherwise use a configurable campaign card ratio, preferably `9/16` for vertical campaign footage or `4/5` only for explicitly portrait editorial cards.
+   - The modal may remain constrained by `max-h` and `max-w`, but its media viewport must preserve the media ratio instead of inheriting the preview card's shape accidentally.
+
+5. **iOS/mobile browser behavior needs its own plan**
+   - Safari has viewport-unit, safe-area, autoplay, visibility, and memory behavior that differs from desktop Chromium.
+   - `100vh` can include browser UI and cause sticky sections to jump or crop. Prefer dynamic viewport units with a fallback: `min-height: 100vh; min-height: 100dvh` where appropriate.
+   - `playsInline`, muted startup, poster fallback, and a user-visible play affordance for reduced-motion or failed autoplay are mandatory.
+   - Do not assume a scroll event is a valid gesture for sound unlock. A tap, click, pointerdown, touchstart, or keypress is the reliable path.
+
+### 0.2 Decisions locked
+
+| Decision | Value | Reason |
 |---|---|---|
-| Runtime | Local Next.js 15 (App Router) + TS in `Fujeira hiring/site/` | Sonnet writes real code; Framer-grade motion is not reachable through a no-code prompt loop |
-| Database | **None.** No Supabase, no Base44, no Postgres | Nothing here needs a DB |
-| CMS | **Filesystem.** Numbered folders under `public/content/` | Drop a file in `03-selected-work/02-foo/` → it appears on next refresh |
-| Admin dashboard | **Cut** | It was solving a problem the folders solve |
-| Auth | **Cut** | No private surface exists |
-| Top priority | **Motion quality** — Apple/iOS-grade feel | Everything else is in service of this; a motion designer is judged on the motion |
-| Content | Placeholders now, real work dropped in later | Empty slot → placeholder, no layout shift, no broken section |
+| Runtime | Next.js 15 + TypeScript | Real component-level control over media and motion |
+| Content | Filesystem CMS | Numbered folders are simpler than an admin dashboard |
+| Database | None for portfolio content | No database is required for static media and copy |
+| Media default | Muted, inline, looped, lazy/visibility-gated | Browser autoplay policy and performance |
+| Sound | Start muted; unlock only after a trusted user gesture | Required by Chrome, Safari, and Firefox policy |
+| Hero | Pinned, responsive composition | Keeps the signature visual while avoiding tablet compression |
+| Selected Work | Pinned stack; one foreground video at a time | Limits decoders and preserves focus |
+| Campaigns | Horizontal card rows with intentional media ratio | Prevents accidental square first paint |
+| Mobile | Treat iOS Safari as a first-class target | It is not a smaller desktop browser |
+| Reduced motion | Poster and explicit play controls | Accessibility and OS preference must win over autoplay |
 
 ---
 
-## 1. What the rolling screenshot missed
+## 1. Architecture
 
-The FireShot capture is a static composite of the homepage. Everything below is in the live site and **invisible in that image** — this list is the actual spec surface.
-
-**Evidence basis:** raw HTML (822 KB, curl) + the **browser-saved hydrated page** (3.1 MB) and its `_files/` assets, both in this folder + rendered markdown of `/`, `/work/meridian`, `/work/citadel`.
-
-- **Now verified from hard data:** all text, IDs, hrefs, video sources, module imports, the complete appear-animation keyframe set (§5.0), the type scale and colour system (§5.3), Lenis version and defaults, and the Film Runner easter egg (item 20).
-- **Still not verified:** scroll-linked behaviour. The site's own component code lives in `framer.BPJFwsnN.mjs`, `motion.BKNsybgV.mjs` and `RecTimer.DL5xxL1Q.mjs`, which the page-save did not pull — the saved `script_main.mjs` turned out to be the bundled Lenis library plus a Phosphor icon manifest. Items still marked `[inferred]` are therefore genuinely inferred.
-- **This no longer blocks anything.** §5.1 specifies the scroll system on its own terms (Apple pattern) rather than reverse-engineering theirs, and §5.0 pins the values that matter. A browser pass is now optional polish, not a prerequisite.
-
-### Global chrome (none of it is in the screenshot)
-
-1. **Fullscreen overlay menu.** "Menu", numbered items `01 Work / 02 Reels / 03 Services / 04 About`, "Get in touch", email, `© 2026`. Opens over everything.
-2. **Persistent bottom HUD.** `FRAME 0000` counter + a `Play` control + the `Book a call / Let's roll` pill *(verified text)*. `[inferred]` that the frame number is scroll-linked, and what `Play` does. Either way it is the strongest "it's a reel, not a page" signal on the site — build it scroll-linked; that is the better version regardless of what they did.
-3. **Lenis smooth scroll** (`unpkg.com/lenis@1.3.23`) — inertial, weighted. Without it the page feels like a different site regardless of what else is built.
-4. **Live REC timecode** via a custom component (`RecTimer.mjs`) — ticks in real time in the hero, `00:14:08:00`.
-5. **Per-section running timecode** that increments down the page as one reel: `00:02:00:00` → `00:03:00:00` → `00:04:00:00` → `00:05:00:00` → closing on `END OF REEL — 00:08:00:00`.
-6. **Section counter labels** `(0X) — TITLE` with a `+` marker. Numbering also runs *inside* Selected Work per card: `(01) — Selected Work`, `(02) — Selected Work`, `(03) — Selected Work`.
-
-### Animation primitives (structural, not decorative)
-
-7. **Split-character text.** *Verified:* every large headline is exploded into one span per character — `The people who call when it has to feel like film, not content`, `Every frame handled by the same person`, `Let's make something people actually finish`. Per-character DOM splitting exists for exactly one reason, so a staggered per-char reveal is safe to assume. *`[inferred]`:* the exact reveal (mask/`y:100%→0` vs opacity vs scroll-linked) and its timing. **Correction to an earlier read:** each headline appears ×3 in the HTML — that is Framer emitting one copy per breakpoint (`__framer__breakpoints` is present), **not** stacked mask layers. Build one responsive component, not three.
-8. **Tickers** — 106 ticker-classed nodes *(verified)*. Client logo band, and a word ticker between work cards (`Karama · Karama · Karama ·`). `[inferred]` direction, speed, hover-pause, any scroll coupling.
-9. **Sticky/stacked work cards** — 3 `sticky` declarations *(verified)*; the pin-and-overlap behaviour is `[inferred]`. Same breakpoint caveat as item 7 applies to the tripled card markup.
-10. **Stats** `120+ / 48M+ / 12 / 24H`, numbered `01–04` *(verified text)*. Count-up-on-view is `[inferred]`.
-11. **Hero timeline ruler** — `00:00  00:30  01:00  01:30  02:00` with faint vertical grid lines.
-12. Four inline videos, all `muted loop playsInline`, `#t=0.1` poster-frame trick on three of them.
-
-### Flows & pages
-
-13. **`/work` index** + **`/work/[slug]`** case studies — `meridian`, `citadel`, `karama`. Each: title, metadata rows (Client / Type / Year / Camera / Deliverables), four narrative blocks **The Brief → The Cut → The Grade → The Result**, master video block, **prev/next screening** link, then the shared booking CTA + footer.
-14. **`/privacy`** and **`/terms`**.
-15. **Booking form flow** — numbered fields `01 NAME / 02 EMAIL / 03 PROJECT (select: Long-form edit · Short-form reels · Colour grade · Motion & titles · Something else) / 04 THE BRIEF`, `Send the brief` submit, `SLOTS FOR JUL: 2 LEFT` scarcity badge, and a 4-stat strip `24H Reply / Revision Rounds / 98% On-time / 5D First Cut`.
-16. **Reels device flow** — iPhone frame, Instagram UI (`Reels`/`Friends` tabs, `48.2k` `612` `1.2k`, `@maison.veldt` caption), spec strip `EDITOR · COLOURIST / RUNTIME 0:15 / RATIO 9:16`, autoplay + auto-advance.
-17. **Footer structure** — `(00) — STUDIO` blurb, `(01) — NAVIGATION`, `(02) — VISIT US` with opening hours and its own time ruler `00:00 03:00 06:00 09:00 12:00`, giant gradient wordmark, Back To Top.
-18. Anchor routing: `#top #services #selected-work #edited-for #reels #about #book #client-notes` *(verified)*.
-19. **Page-load sequence — RESOLVED, and it is substantial.** A choreographed **3.75s** entrance across 22 elements, full keyframes in §5.0. Not a spinner-style preloader — the page assembles itself. This is the first thing the interviewer sees; treat it as a deliverable, not a flourish.
-20. **Hidden "Film Runner" mini-game** *(verified)*. A `270×110` game board component, `opacity: 0` until triggered — almost certainly behind the HUD `Play` control. Its CSS carries a full set of keyframes: `filmRunnerCoinSpin` (`rotateY 0→360deg`), `filmRunnerCoinBurst` (`scale 1→1.8`, fade), `filmRunnerScorePop` (`translateY 0→−14px`, fade), `filmRunnerShake` (4-step jitter, ±3px), `filmRunnerFlash`, `filmRunnerFadeUp`. An endless-runner easter egg with coin collection and a score pop. **Recommendation: build an equivalent.** For a motion-design portfolio specifically, a hidden interactive toy is the cheapest possible proof that you think in motion rather than just render it — and it is the thing an interviewer remembers and shows someone else. Scope it to Phase 7, cut it without guilt if time runs out.
-
----
-
-## 2. Positioning changes — do not clone the copy
-
-Anamorph sells a **video editor / colourist freelancer**. You are interviewing as a **motion graphic designer, for a job**. Three changes:
-
-1. **Retarget the Services taxonomy.** Replace `Long-form Edits / Short-form Reels / Colour Grade / Motion & Titles` with motion-design categories: `Brand Motion Systems`, `Title Sequences & Broadcast Packages`, `3D & Compositing`, `Social / Vertical Motion`, `AI-Assisted Pipeline`. Keep the film-reel HUD motif — it still reads for motion.
-2. **Cut the Rates section.** Public day rates on a portfolio you hand to a hiring panel anchors you as a freelancer, and anchors your number before you are in the room. Replace `(06) — RATES` with `(06) — PROCESS` (how a brief becomes a delivered package). *If you want it back, say so — it is one section.*
-3. **No fabricated metrics or testimonials.** `48M+ views`, `98% on-time`, three named clients praising you — an interviewer opens this site and asks about them. Either use real numbers from Nadi/Hamdan/Faz3 work, or replace the stats strip with non-falsifiable facts (years, disciplines, tools, formats delivered) and drop `(07) — CLIENT REVIEWS` until you have a real quote. Hide-when-empty already handles it.
-
----
-
-## 3. Architecture
-
-```
-Fujeira hiring/site/
+```text
+site/
 ├─ app/
-│  ├─ layout.tsx            # Lenis provider, cursor, HUD, overlay menu, fonts
-│  ├─ page.tsx              # homepage — composes sections 01–08
-│  ├─ work/page.tsx         # work index
-│  ├─ work/[slug]/page.tsx  # case study (generateStaticParams from folders)
-│  ├─ privacy/page.tsx
-│  └─ terms/page.tsx
+│  ├─ layout.tsx
+│  ├─ page.tsx
+│  ├─ globals.css
+│  └─ work/[slug]/page.tsx
 ├─ components/
-│  ├─ chrome/   Header, OverlayMenu, FrameHUD, Cursor, LenisProvider
-│  ├─ motion/   SplitText, Reveal, Ticker, StickyStack, CountUp, Parallax, RecTimer, SectionHeader
-│  ├─ media/    LazyVideo, PosterImage, PhoneFrame, ViewfinderFrame, Lightbox
-│  └─ sections/ 01Hero … 08Booking (one file each)
+│  ├─ chrome/
+│  │  ├─ LenisProvider.tsx
+│  │  ├─ SoundProvider.tsx
+│  │  ├─ LoadSequenceProvider.tsx
+│  │  └─ FrameHUD.tsx
+│  ├─ media/
+│  │  ├─ LazyVideo.tsx
+│  │  ├─ PhoneFrame.tsx
+│  │  ├─ PosterImage.tsx
+│  │  └─ Lightbox.tsx
+│  ├─ motion/
+│  └─ sections/
+│     ├─ 01Hero.tsx
+│     ├─ 03SelectedWork.tsx
+│     ├─ 04Reels.tsx
+│     └─ Campaigns.tsx
 ├─ lib/
-│  ├─ content.ts      # the filesystem scanner (§4)
-│  ├─ placeholders.ts # fallback media + copy
-│  └─ motion.ts       # easing/spring/duration tokens (§5)
-└─ public/content/    # THE CMS — see §4
+│  ├─ content.ts
+│  └─ motion.ts
+└─ public/content/
 ```
 
-**Stack:** Next.js 15 · TypeScript · Tailwind v4 · `motion` (Framer Motion) · `lenis` · zero other runtime deps.
-**Contact form:** no backend. Submit composes a `mailto:` with the fields prefilled, plus a copy-email-to-clipboard affordance. Swap for Formspree later if wanted — one env var.
-**Deploy:** Vercel, or a static export to any host. Nothing server-side is required.
+### Media ownership rules
+
+- `LazyVideo` owns lazy mounting, autoplay attempt, pause-on-leave, reduced-motion behavior, and sound-manager registration.
+- The parent section owns layout, active/inactive state, and which media should exist.
+- A parent must never depend on a video being mounted synchronously after setting state.
+- Every video must have a poster where possible. A `#t=0.1` URL fallback is useful but is not a replacement for a real poster on Safari.
+- A rejected `play()` promise is expected browser behavior, not an exception to display to users. It must be observable in development and degrade to a poster/play control in production.
 
 ---
 
-## 4. The filesystem CMS (this is the contract — build it first)
+## 2. Responsive composition plan
 
-```
-public/content/
-├─ 01-hero/
-│  ├─ background.mp4          # or .jpg — first file wins
-│  └─ portrait.jpg            # floating intro card
-├─ 02-edited-for/             # client logo ticker; hidden if empty
-│  ├─ 01-client-name.svg
-│  └─ 02-client-name.png
-├─ 03-selected-work/
-│  ├─ 01-project-name/
-│  │  ├─ meta.json            # OPTIONAL overrides
-│  │  ├─ cover.jpg            # card poster
-│  │  ├─ master.mp4           # 16:9 hero video
-│  │  └─ 01-still.jpg …       # case-study body stills, ordered
-│  └─ 02-project-name/
-├─ 04-reels/                  # 9:16
-│  ├─ 01-reel-name.mp4
-│  └─ 01-reel-name.jpg        # poster: same stem = auto-paired
-├─ 05-services/               # optional per-service still/loop
-│  └─ 01-brand-motion-systems.mp4
-├─ 06-about/
-│  ├─ portrait.jpg
-│  └─ signature.png
-├─ 07-reviews/                # hidden if empty
-│  └─ 01-name.json
-└─ _placeholders/             # shipped fallbacks, never edited by you
-```
+### 2.1 Breakpoints and testing widths
 
-**Rules Sonnet implements in `lib/content.ts`:**
+Test at all of these widths, not only “mobile” and “desktop”:
 
-- Order = numeric prefix, ascending. Renumber a folder → order changes. No config file to edit.
-- Title = slug after the prefix, de-hyphenated, title-cased. `01-doha-metro-titles` → *Doha Metro Titles*.
-- `meta.json` overrides anything derived: `{ title, client, year, role, category, annotation, ratio, brief, approach, system, result }`. Absent = derived/placeholder.
-- Aspect ratio inferred from the section (`03-` → 16:9, `04-` → 9:16) unless `meta.json` says otherwise.
-- Poster pairing: `<stem>.jpg|png|webp` next to `<stem>.mp4`. No poster → `#t=0.1` first-frame fallback.
-- **Empty folder → placeholder, never a broken or blank section.** A section whose folder is empty *and* is marked `hideWhenEmpty` (`02-edited-for`, `07-reviews`) is omitted entirely.
-- **Dev affordance:** in `NODE_ENV=development` only, placeholder slots render a small corner tag `PLACEHOLDER · 03-selected-work/02-*` so you can see at a glance which folders are still empty. Invisible in production.
-- Scanner runs in a server component at build; dev uses `revalidate: 0` so dropping a file + refresh is enough. No restart.
-- Every folder ships pre-created with a `.gitkeep` and a `README.txt` naming what goes in it and at what spec.
+- 360 × 800: small iPhone portrait
+- 390 × 844: current iPhone portrait baseline
+- 430 × 932: large iPhone portrait
+- 768 × 1024: iPad portrait / tablet boundary
+- 834 × 1194: iPad Air/Pro portrait
+- 1024 × 768: tablet landscape / small laptop
+- 1280 × 800: laptop
+- 1440 × 900: desktop
+- 1920 × 1080: large desktop
 
-**Media spec** (put in each README.txt): 16:9 → 1920×1080 H.264 `.mp4`, ≤8 MB, no audio track. 9:16 → 1080×1920, ≤6 MB. Posters → WebP, ≤200 KB. Logos → SVG preferred.
+Also test zoom at 100%, 125%, and 200%. The layout must remain usable and must not depend on hover.
+
+### 2.2 Hero alignment correction
+
+The Hero should use a responsive inner composition rather than unrelated absolute offsets:
+
+- Keep the media layer full bleed.
+- Put all readable content inside a constrained container: `width: min(100% - 2*padding, max-width)`.
+- Use a two-column grid only at a genuine desktop breakpoint, approximately `min-width: 1024px`.
+- At tablet widths, use one column with a controlled max width and center the composition visually while retaining a modest left text anchor.
+- Position the portrait card relative to the composition container, not relative to the viewport edge.
+- Use CSS `clamp()` for horizontal padding and headline size.
+- Avoid `right: 2.5rem`-style offsets that look correct at one width and drift at another.
+- Check the interaction between the hero's large wordmark, the portrait, and the browser's safe-area inset.
+
+Acceptance criteria:
+
+- At 768px and 1024px widths, the headline and background subject read as intentionally composed, not clipped or stranded on the left.
+- At 1440px and above, the existing editorial left alignment remains intentional.
+- No horizontal scrollbar is introduced by the wordmark, motion transforms, or portrait card.
+- The hero remains readable with portrait hidden if the available width is too small.
+
+### 2.3 Phone frame and Selected Work composition
+
+- Keep the phone frame centered in the pinned viewport.
+- The phone must have a maximum width and a maximum height based on dynamic viewport height, not only a fixed pixel width.
+- Use `max-height: calc(100dvh - safe-area allowance - section chrome)` and derive width from the phone aspect ratio.
+- Do not let the surrounding slide's `h-full w-full` cause the vertical media to stretch.
+- Keep the video inside the frame with `object-fit: cover` only when cropping is explicitly intended; otherwise use `object-fit: contain` against the designed background.
+- Preserve the notch and rounded clipping on iOS.
+- On short landscape tablets, shrink the phone before reducing the content's usable height.
+
+Acceptance criteria:
+
+- The entire phone remains visible on 768×1024, 1024×768, and 390×844.
+- The phone does not jump when Safari's address bar expands or collapses.
+- Only the active Selected Work video is decoded and playing.
+- When changing slides, the outgoing video pauses and the incoming video gets a poster immediately.
 
 ---
 
-## 5. Motion system — the priority
+## 3. Autoplay and visibility design
 
-Apple/iOS feel is not "more animation". It is four things: **slow, one easing curve everywhere, scroll-linked rather than scroll-triggered, and nothing that drops a frame.**
+### 3.1 Required `<video>` attributes
 
-### 5.0 Verified reference values
+For muted ambient videos:
 
-Extracted from the reference's `__framer__appearAnimationsContent` blob — these are the template's real keyframes, not estimates. 22 animated elements:
+```tsx
+<video
+  muted
+  playsInline
+  autoPlay
+  loop
+  preload="metadata"
+  poster={poster ?? undefined}
+/>
+```
 
-- **One easing curve for everything: `[0.16, 1, 0.3, 1]`.** All 22. No exceptions.
-- **Tween only. Zero springs.** Springs are for hover/press interaction here, nothing else.
-- **Durations 0.6 → 2.4s.** Far slower than typical web motion; this is most of why it reads cinematic. Short `0.6s` is reserved for small chrome items.
-- **Hero: `scale 1.06 → 1` over 2.4s.** This is the signature "slight zoom" — a 6% settle, nothing more.
-- **Slab reveals: `y: ±860 → 0` over 1.5s**, alternating direction (`+860`, `−860`, `+860`, `−860`), staggered 0.25s apart.
-- **Small items: `y: 18 → 0` or `y: −8 → 0`**, 0.6–1.4s.
-- `opacity: 0.001 → 1`, never `0` (avoids a first-paint flash). The oversized wordmark animates to `0.3`, not `1`.
-- **Load choreography is real and answers item 19: a 3.75s cascade**, delays stepping `0 → 0.25 → 0.45 → 0.65 → 0.9 → 1.15 → 1.4 → 1.65 → 1.9 → 2.15 → 2.4 → 2.65 → 2.9 → 3.15`. Roughly 0.25s between entrances, longest elements starting first.
+Notes:
 
-**Tokens (`lib/motion.ts`), used everywhere — no ad-hoc values:**
+- `muted` must be true before the first `play()` attempt. Use the DOM property as well as the React prop when sound state changes.
+- `playsInline` is mandatory on iOS; without it Safari may use a native fullscreen player.
+- `preload="metadata"` is a reasonable default for active/near-visible media. Use `none` only when the mount/play sequence has been proven reliable on target devices.
+- Do not attach a video source to every inactive pinned slide.
+
+### 3.2 `LazyVideo` lifecycle
+
+The correct lifecycle is:
+
+1. Observe the wrapper.
+2. When near the viewport, set `nearView`.
+3. React mounts the video.
+4. A post-mount effect obtains the real video element.
+5. Set `muted`, claim sound ownership if applicable, and call `play()`.
+6. If `play()` rejects, keep the poster visible and expose a play affordance where the context requires user interaction.
+7. On leaving the visibility threshold, pause the element.
+8. On returning, call `play()` again.
+9. On unmount or source change, pause and reset any section-specific state.
+
+The post-mount retry added to `LazyVideo` is specifically required for the Hero and first Selected Work slide. Do not remove it in favor of only the observer callback.
+
+### 3.3 Make autoplay failures diagnosable
+
+During development, record:
+
+- source URL
+- `readyState`
+- `paused`
+- `muted`
+- `document.visibilityState`
+- intersection state
+- whether `play()` rejected and its error name
+
+Do not silently swallow every failure while debugging. In production, avoid noisy user-facing errors, but retain a poster and play button fallback.
+
+### 3.4 Avoid competing observers
+
+- A section's active state and `LazyVideo`'s visibility state are separate concerns.
+- A video may be mounted because it is the active slide but still be outside the viewport; it must remain paused.
+- A video may be near the viewport but not the active slide; the parent should not mount it merely because it is near.
+- Sound exclusivity should mute other sound-managed videos, but it must not be used as a replacement for pausing inactive media.
+
+### 3.5 Sound behavior
+
+- Start every autoplaying video muted.
+- Unlock sound only in a trusted event handler.
+- Use synchronous DOM mutation inside that handler before updating React state.
+- Do not treat wheel/scroll as a guaranteed sound gesture.
+- Do not allow several ambient campaign previews to compete for audio; campaign grid previews should remain force-muted.
+- A focused, explicitly opened Lightbox video may use the opening click as its user gesture, but it must still handle browsers that refuse unmuted autoplay.
+
+---
+
+## 4. Campaign media framing
+
+### Current issue
+
+`Campaigns.tsx` currently defines the preview button as `aspect-[4/5]`. This makes a 9:16 video appear inside a nearly square editorial card during first paint and can make the later video look like it suddenly changes shape.
+
+### Planned correction
+
+Introduce an explicit media-ratio decision:
 
 ```ts
-// Verified against the reference. Do not invent new easings.
-export const ease = { out: [0.16, 1, 0.30, 1] } as const;   // the only curve
-
-export const dur = {
-  chrome: 0.6,   // HUD, labels, small UI
-  base:   1.4,   // standard block reveal
-  slab:   1.5,   // large y:±860 panel reveals
-  hero:   2.4,   // hero scale-settle + wordmark
-} as const;
-
-export const stagger = { char: 0.018, item: 0.25 } as const; // 0.25 = reference cadence
-
-export const zoom = { in: 1.06, rest: 1, out: 0.96 } as const; // the scale-breathe
-
-// Springs ONLY for pointer interaction — never for reveals.
-export const spring = {
-  snap: { type: 'spring', stiffness: 420, damping: 34, mass: 0.7 },
-} as const;
+type MediaRatio = "16:9" | "9:16" | "4:5" | "1:1";
 ```
 
-### 5.1 Scroll-flow system — the Apple pattern (top priority)
+Preferred order:
 
-This is the brief: **slides that zoom slightly in and out, driven by scroll, with sections that capture the scroll and animate in place.** Three mechanics, composed:
+1. A ratio declared in campaign metadata.
+2. A ratio inferred from the media asset or campaign type.
+3. A section default chosen intentionally, not accidentally.
 
-**A. Scroll-capture (pinned) sections.** A tall outer container (`300–400vh`) with an inner `position: sticky; top: 0; height: 100vh`. The page scroll no longer moves the content — it drives the animation inside. This is what "iPhone flow" actually is mechanically. Use `useScroll({ target, offset: ['start start', 'end end'] })` → `useTransform` on the inner layers. **Never intercept the wheel event.** The scroll stays native; only the mapping changes. Scroll-jacking breaks trackpads, breaks mobile, and reads as cheap.
+For the current campaign material, default vertical footage to `9:16`. Render the card using a ratio class selected from data, for example:
 
-**B. Scale-breathe on every slide.** Each slide/card is scroll-linked across its own viewport pass, not triggered once:
-```
-progress 0 ──── 0.5 ──── 1
-scale     1.06    1.00    0.96
-opacity   0       1       0.55
-blur      6px     0       3px      (at most one blurring element at a time)
-```
-Driven with `useScroll({ offset: ['start end', 'end start'] })`. The result is content that always feels like it is settling toward you and easing away — that is the whole effect, and it is 6%, not 20%. Overdo the scale and it reads as a PowerPoint transition.
-
-**C. Layered parallax inside each pinned section.** Background media moves at ~0.85× scroll rate, midground 1×, foreground text ~1.15×. Small differences only. Combined with (B) this produces depth without any 3D.
-
-**Apply pinned scroll-capture to exactly these sections** — not everywhere, or it becomes exhausting:
-1. Hero → pinned; wordmark scales `1.06 → 1`, timeline ruler drifts, bg video scrubs or loops.
-2. Selected Work → pinned stack; each card scale-breathes as the next overlaps it.
-3. Reels (iPhone) → pinned; the device holds centre while reels advance inside it.
-4. About → pinned; the credit list reveals line by line against scroll progress.
-
-Every other section uses plain scroll-triggered reveals from §5.2. The contrast is what makes the pinned ones land.
-
-**D. Page-load choreography.** Reproduce the 3.75s cascade from §5.0 on first paint only (`sessionStorage` flag so it does not replay on back-navigation). Slabs alternate in from `y: +860 / −860` at 0.25s intervals, hero settles `1.06 → 1` across the whole 2.4s underneath them, chrome and HUD land last at 2.15–3.15s. This sequence is the first thing the interviewer sees. Budget real time for it.
-
-### 5.2 Primitives
-
-**Primitives to build (in this order — everything else composes from them):**
-
-1. `LenisProvider` — `lerp: 0.085`, `wheelMultiplier: 1`, `syncTouch: false`. Bridge Lenis's rAF into Framer Motion's `useScroll` so scroll-linked animation and smooth scroll share one clock. Getting this wrong causes the jitter that kills the whole feel.
-2. `SplitText` — splits to chars (headlines) or words (body). Each char in an `overflow-hidden` wrapper animating `y: 100% → 0` + opacity, `ease.out`, `stagger.char`, `viewport: { once: true, margin: '-15%' }`. Transform only — never `top`/`margin`.
-3. `Reveal` — generic block version: `y: 32 → 0`, `opacity 0 → 1`, `dur.base`, `ease.out`.
-4. `Ticker` — rAF-driven translateX (not CSS keyframes) so it can velocity-couple to scroll: base speed + `scrollVelocity * k`, direction flips with scroll direction, pauses on hover, seamless duplicate-and-wrap.
-5. `StickyStack` — Selected Work. Each card `position: sticky; top: <n>vh`. Outgoing card `scale 1 → 0.94`, `opacity → 0.5`, `blur 0 → 4px`, driven by `useScroll({ offset: ['start start','end start'] })`.
-6. `FrameHUD` — fixed bottom bar. Frame counter = `Math.floor(scrollProgress * totalFrames)` zero-padded to 4, monospace, `tabular-nums`. `Play` scrolls to the reel and opens the lightbox.
-7. `RecTimer` — `requestAnimationFrame`, renders `HH:MM:SS:FF` at 24fps, red dot `#FF4500` pulsing at 1Hz.
-8. `CountUp` — spring-driven, `tabular-nums`, fires once on enter.
-9. `LazyVideo` — IntersectionObserver, `preload="none"` until ~200px from viewport, then `autoplay muted loop playsInline`, pauses off-screen, poster always painted first. Hard requirement: **more than two simultaneously decoding videos tanks the frame rate** — pause anything out of view, no exceptions.
-10. `Cursor` — dot + label, lerped follow, grows on interactive hover, shows `PLAY` over video. Desktop / fine-pointer only.
-
-**Non-negotiable perf rules:**
-
-- Animate `transform` and `opacity` only. `filter: blur` on at most one element at a time.
-- `will-change` applied on animation start, removed on end.
-- All buttons **flat** — solid or outline pill, full radius, **zero box-shadow**, hover = `spring.snap` scale/colour only.
-- `prefers-reduced-motion: reduce` → Lenis off, tickers static, split-text renders instantly, videos show posters with a play affordance. Built into every primitive, not a pass at the end.
-- Budget: 60fps sustained scroll on a mid laptop, LCP < 2.5s, total homepage video weight < 20 MB.
-
-### 5.3 Visual system — verified from the saved page
-
-**Colour.** Extracted, not guessed:
-
-```
---bg          #0A0A0A   near-black base
---surface     #0D0D0D   raised panels (most-used value on the page)
---text        #EDE8DC   warm cream — NOT pure white
---text-alt    #E3DCCB   secondary cream
---text-hi     #F4F2ED   highest-contrast cream
---meta        #787878   labels, timecodes, section numbers
---rec         #FF4500   REC dot / accent
---rec-deep    #DB3903   accent pressed
---warn        #EF0008   error state only
+```tsx
+const ratioClass = ratio === "9:16" ? "aspect-[9/16]" : ratio === "16:9" ? "aspect-video" : "aspect-[4/5]";
 ```
 
-The single most copyable decision here: **text is cream `#EDE8DC`, not `#FFFFFF`.** Pure white on near-black is what makes a dark portfolio read as a template. The cream is why theirs reads as film.
+The card should be “full frame” in the sense of showing the whole designed media frame inside a bounded card, not full viewport. Avoid `h-screen`, `fixed`, or a viewport-sized modal for the preview.
 
-**Type.** Real face is **BDO Grotesk Variable** (Inter is only Framer's fallback). Substitute if unlicensed: *General Sans*, *Neue Montreal*, or *Satoshi* — all free, same geometric-grotesk register. The scale is deliberately **two-pole, with nothing in the middle**:
+For the Lightbox:
 
-| Role | Size | Tracking |
-|---|---|---|
-| Display | **120px** (18 uses — the dominant size on the page) | `-0.07em` |
-| Sub-display | 77 / 64 / 60 / 48px | `-0.07em` |
-| Body | 24 / 18px | `-0.02em` |
-| UI / meta | 15 / 13px | `-0.05em` |
-| Micro-labels | **10px** | `-0.05em` / `0em` |
+- Use `max-h-[calc(100dvh-2rem)]` with safe-area padding.
+- Let the media wrapper use the selected ratio.
+- Constrain width with `min(92vw, 32rem)` or an equivalent responsive rule.
+- Use `object-contain` if preserving the entire frame is more important than filling every pixel.
+- Keep controls accessible and visible on iOS.
 
-Tight negative tracking on everything is half the look — `-0.07em` on display is aggressive and intentional. Jumping straight from 120px to 13px with no 30–40px tier is the other half. Do not "fix" that gap by adding intermediate sizes.
+Acceptance criteria:
 
-Oversized low-opacity wordmark as background motif — animates to `opacity: 0.3`, per §5.0. Monospace with `tabular-nums` for every timecode, frame number and stat; the numbers must not jitter in width as they tick.
+- A vertical campaign opens in a vertical frame on first paint; no square flash.
+- A landscape campaign remains landscape.
+- No campaign card or Lightbox exceeds the usable dynamic viewport.
+- The card remains tappable with a visible focus/pressed state and no hover-only behavior.
 
 ---
 
-## 6. Section build spec
+## 5. iOS Safari and mobile browser plan
 
-Page order differs from `3-prompts-plan.md` — Services sits after Work, per your Prompt 2 note.
+### 5.1 Viewport and safe areas
 
-| # | Section | Anchor | Key elements | Hide if empty |
-|---|---|---|---|---|
-| — | Header + Overlay menu | — | Sticky bar, wordmark, 4 links, flat CTA pill; fullscreen overlay with numbered `01–04`, email, copyright | no |
-| — | Frame HUD | — | `FRAME 0000` scroll-linked counter, `Play`, CTA pill | no |
-| 01 | Hero | `#top` | Timeline ruler `00:00–02:00` + grid lines, REC dot + live timecode, split-char wordmark, bg video, floating intro card | no |
-| — | Statement band | — | Split-char marquee, ×3 rows, velocity-coupled | no |
-| 02 | Edited For | `#edited-for` | Logo ticker, grayscale → colour on hover | **yes** |
-| — | Stats | — | 4 count-ups, numbered `01–04`, non-falsifiable metrics only (§2.3) | no |
-| 03 | Selected Work | `#selected-work` | Sticky stacked cards, per-card `(0X) — Selected Work`, hover→preview, click→`/work/[slug]`, word ticker between cards | no |
-| 04 | Reels | `#reels` | iPhone frame + IG UI, autoplay, auto-advance ~6s, scroll-snap override, spec strip, split `Short / Form` heading | no |
-| 05 | Services | `#services` | 4–5 alternating numbered rows, loop/still per service, motion-design taxonomy (§2.1) | no |
-| 06 | Process | — | Replaces Rates (§2.2) — brief → boards → animatic → delivery, numbered | no |
-| 07 | About | `#about` | Split-char headline, credit list (DESIGN / ANIMATION / 3D / COMP / SOUND = one name), portrait, signature | no |
-| 08 | Booking | `#book` | Numbered form `01–04`, `mailto:` submit, availability badge, 4-stat strip, `END OF REEL — 00:08:00:00` | no |
-| — | Footer | — | `(00) STUDIO` / `(01) NAVIGATION` / `(02) VISIT US` + hours + time ruler, giant gradient wordmark, Back To Top | no |
+- Add the correct viewport configuration through Next metadata: `width=device-width, initial-scale=1, viewport-fit=cover`.
+- Use `100dvh` for current visible viewport height, with `100vh` fallback.
+- Use `env(safe-area-inset-top)`, `env(safe-area-inset-bottom)`, and horizontal safe-area values for fixed HUD, header, sticky content, and Lightbox controls.
+- Never assume `100vh` is stable while Safari chrome is moving.
+- Test both toolbar-expanded and toolbar-collapsed states.
 
-**Sub-pages:** `/work` (grid index) · `/work/[slug]` (metadata rows → The Brief / The Approach / The System / The Result → master video → prev-next → shared booking CTA + footer) · `/privacy` · `/terms`.
+### 5.2 Touch and scrolling
 
----
+- Keep Lenis disabled or carefully configured on touch devices if it interferes with native momentum scrolling.
+- Never prevent the page's touchmove globally.
+- Do not hijack wheel, touch, or pointer events to fake scroll progress.
+- Horizontal campaign rows must support native touch scrolling and must not trap vertical swipes.
+- The Lightbox must lock background scrolling without breaking safe-area positioning or back navigation.
 
-## 7. Build order
+### 5.3 Video and memory
 
-Sequenced so the site is demo-able at the end of every phase. If time runs out you stop at the current phase and still have something sendable.
+- Keep only the active pinned video and genuinely visible ambient previews playing.
+- Pause videos on `visibilitychange` when the page is backgrounded.
+- Pause or release media when a Lightbox closes.
+- Avoid decoding multiple high-bitrate videos in the first viewport.
+- Encode mobile-friendly H.264 variants; do not use oversized desktop masters for every phone viewport.
+- Posters must be optimized WebP/AVIF where supported, with a reliable JPEG fallback when necessary.
+- Consider `content-visibility` only after verifying that it does not interfere with IntersectionObserver and pinned sections.
 
-**Phase 1 — foundation (day 1–2)**
-`create-next-app`, Tailwind, fonts, colour tokens, `lib/motion.ts`, `LenisProvider`, `lib/content.ts` + the full `public/content/` tree with READMEs and `_placeholders`.
-**Gate:** drop a random mp4 into `03-selected-work/01-test/` and it appears on refresh. Nothing else starts until this passes.
+### 5.4 Interaction fallback
 
-**Phase 2 — motion primitives (day 2–3)**
-`SplitText`, `Reveal`, `Ticker`, `StickyStack`, `CountUp`, `LazyVideo`, `RecTimer`, `SectionHeader`. Build them on a `/lab` route in isolation, each with its reduced-motion variant.
-**Gate:** `/lab` scrolls at 60fps with everything running at once. This phase is where the "gorgeous" is won or lost — do not rush it to get to sections.
+Every autoplay-dependent visual must still communicate its content if autoplay fails:
 
-**Phase 3 — chrome (day 3–4)**
-Header, overlay menu, `FrameHUD`, cursor, anchor routing, page transitions.
+- poster or first-frame image
+- accessible label
+- visible play control when the video is a focal interaction
+- no blank black rectangle
+- no layout shift while the media loads
 
-**Phase 4 — the money sections (day 4–7)**
-Hero → Statement band → Selected Work (sticky stack) → Reels (phone). These four carry the interview. Full polish here before touching anything below.
+Reduced-motion users should receive a poster and native controls rather than an auto-looping background.
 
-**Phase 5 — remaining sections (day 7–9)**
-Edited For, Stats, Services, Process, About, Booking, Footer.
+### 5.5 iOS test matrix
 
-**Phase 6 — sub-pages (day 9–10)**
-`/work`, `/work/[slug]`, `/privacy`, `/terms`.
+Test on physical Safari where possible:
 
-**Phase 7 — polish + ship (day 10–12)**
-Responsive pass (360 / 768 / 1440 / 1920), reduced-motion audit, Lighthouse, flat-button audit, real content swap-in, deploy, domain. **Stretch: the hidden mini-game (item 20)** — highest signal-per-hour item on the whole list for a motion role, and the safest thing to cut.
+- iPhone on Wi-Fi, Low Power Mode off/on
+- iPhone with Safari toolbar expanded/collapsed
+- iPad portrait and landscape
+- first visit, reload, back navigation, and deep link with a hash
+- page opened from an external app
+- private browsing
+- muted autoplay before and after a tap
+- sound toggle after a video is already playing
+- orientation change while a pinned section is active
+- reduced-motion enabled in Accessibility
 
-**Reference assets (already in this folder, do not delete):**
-`Anamorph™ … .html` (3.1 MB hydrated save) + `Anamorph™ … _files/` — the source for every verified value in §5.0 and §5.3. Grep it rather than guessing. The `FireShot …jpg` is layout reference only; it shows no motion. `3-prompts-plan.md` is superseded — keep for history, do not build from it.
-
-**Parallel track, yours not Sonnet's:** cut 3 case-study pieces + 4–6 vertical reels, encode to spec, drop into the numbered folders. The site does not block on this, and this does not block the site.
-
----
-
-## 8. Definition of done
-
-- [ ] Empty `public/content/` → site renders complete, nothing broken, no layout shift
-- [ ] Adding a numbered folder + a file → appears on refresh, correct order, no code edit
-- [ ] Removing content → section hides or falls back cleanly
-- [ ] 60fps sustained scroll, desktop and mobile
-- [ ] `prefers-reduced-motion` → fully usable, zero auto-motion
-- [ ] Zero raised or shadowed buttons anywhere
-- [ ] Every timecode / frame / stat uses `tabular-nums` and does not jitter
-- [ ] No fabricated client names, metrics, or testimonials
-- [ ] Keyboard: overlay menu Esc, lightbox Esc + arrows, visible focus rings
-- [ ] Works at 360px wide
-- [ ] Deployed at a URL you can paste into an email
+Also test Chrome on iOS because it uses WebKit but can differ in lifecycle and UI integration.
 
 ---
 
-## 9. Open items for you
+## 6. Section-specific implementation checklist
 
-1. Domain — needed by Phase 7.
-2. Real stat numbers, or confirm the non-falsifiable set.
-3. Confirm Rates stays cut.
-4. Nadi / Hamdan / Faz3 material — what is clearable for a public portfolio? Affects nothing until Phase 7, but decide early.
+### Hero
+
+- [ ] Replace viewport-edge absolute composition with responsive inner container/grid.
+- [ ] Verify tablet/laptop alignment at 768, 834, 1024, and 1280 widths.
+- [ ] Keep a real poster for the background video.
+- [ ] Confirm `LazyVideo` post-mount playback runs on initial load.
+- [ ] Confirm Hero pauses when the section is fully off-screen.
+- [ ] Confirm the portrait does not overlap the headline at 200% zoom.
+- [ ] Confirm safe-area padding on iPhone.
+
+### Selected Work
+
+- [ ] Keep only the active slide's video mounted.
+- [ ] Ensure active-index calculation is correct at progress 0 and after hydration.
+- [ ] Ensure the first active video receives a post-mount playback attempt.
+- [ ] Pause the outgoing video before or during slide replacement.
+- [ ] Preserve a vertical frame without stretching.
+- [ ] Keep the pinned section usable with reduced motion and touch scrolling.
+- [ ] Verify no covered slide continues decoding.
+
+### Campaigns
+
+- [ ] Replace hard-coded `aspect-[4/5]` with metadata-driven ratio.
+- [ ] Default current vertical footage to `9:16`.
+- [ ] Keep previews force-muted.
+- [ ] Add poster-first loading state.
+- [ ] Make Lightbox media ratio-aware and safe-area aware.
+- [ ] Test horizontal swipe without accidental vertical scroll lock.
+
+### Reels
+
+- [ ] Keep `playsInline`, poster, and visibility pause behavior.
+- [ ] Test AnimatePresence source replacement on Safari.
+- [ ] Pause the old element before the new source becomes active.
+- [ ] Confirm the phone frame uses dynamic viewport height on short landscape screens.
+
+---
+
+## 7. Performance and accessibility budgets
+
+- Sustained 60fps scrolling on a mid-range laptop and acceptable touch scrolling on a recent iPhone.
+- LCP target under 2.5 seconds on a good mobile connection.
+- Do not load every homepage video during first paint.
+- Keep the initial video bytes bounded; prefer posters and metadata before full decode.
+- Animate transforms and opacity wherever possible.
+- Use no more than one actively blurred layer at a time.
+- All controls have keyboard focus styles and accessible names.
+- Touch targets should be at least approximately 44×44 CSS pixels.
+- Do not rely on color alone for active carousel state.
+- `prefers-reduced-motion` disables Lenis, autoplay loops, and decorative transitions while retaining usable media controls.
+
+---
+
+## 8. QA procedure before deployment
+
+1. Run typecheck, lint, and production build.
+2. Test a cold load with cache disabled.
+3. Test a warm reload and back navigation.
+4. Test a deep link containing a hash; the page must still establish the intended top-of-page state before smooth scrolling.
+5. Record whether Hero starts, whether the first Selected Work video starts, and whether later videos pause correctly.
+6. Inspect the Network panel to ensure inactive videos are not fetched unnecessarily.
+7. Inspect the Media panel for more than one unexpected playing video.
+8. Test autoplay after a user tap and before a user tap; both states must be understandable.
+9. Test campaign card first paint and Lightbox ratio.
+10. Repeat at every width in §2.1.
+11. Repeat in Safari iOS/iPadOS, desktop Safari, Chrome, and Firefox.
+12. Enable reduced motion and verify no auto-motion is required to understand the site.
+13. Verify no horizontal overflow and no clipped fixed controls.
+14. Deploy the standalone `haitham72/Portfolio` repository that Vercel actually reads; updating only a different monorepo copy does not update production.
+
+---
+
+## 9. Definition of done
+
+- [ ] Hero is intentionally aligned at desktop, tablet, and laptop widths.
+- [ ] Hero autoplay starts reliably when muted, with poster fallback if the browser rejects playback.
+- [ ] First Selected Work video starts reliably and inactive slides do not decode/play.
+- [ ] Selected Work phone/mobile frame is centered and fully visible on short screens.
+- [ ] Campaign previews show their intended full media frame rather than an accidental square first frame.
+- [ ] Campaign Lightbox respects media ratio, dynamic viewport height, and safe areas.
+- [ ] Reels and all other videos pause when genuinely off-screen or the document is hidden.
+- [ ] iOS Safari has been tested in portrait, landscape, toolbar-expanded, and toolbar-collapsed states.
+- [ ] Reduced motion produces a complete, usable poster/control experience.
+- [ ] No layout shift, horizontal overflow, or inaccessible keyboard/touch control remains.
+- [ ] Production build passes and the deployed repository is the one connected to Vercel.
+
+---
+
+## 10. Next implementation order
+
+1. Verify the already-added `LazyVideo` post-mount autoplay fix on a cold desktop and iOS load.
+2. Correct Hero responsive composition and test the tablet/laptop alignment.
+3. Harden Selected Work active-video lifecycle and dynamic phone sizing.
+4. Add campaign ratio metadata/defaults and replace the hard-coded 4:5 preview shape.
+5. Add dynamic viewport and safe-area handling to layout, pinned sections, HUD, and Lightbox.
+6. Add development diagnostics for rejected `play()` promises and unexpected playing videos.
+7. Run the full QA matrix, then deploy the standalone Portfolio repository.
