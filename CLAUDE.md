@@ -24,20 +24,22 @@ or in the README — don't append session narratives to either.
   cookie. Verify route-level logic (status codes, redirects) via curl; verify actual rendered
   content by asking the user to check in a real signed-in browser, or by reading the component
   code directly.
-- **Real work is still mostly stock placeholder.** Everything tagged `"stockPlaceholder": true`
-  in a `meta.json` is free stock media standing in for the user's real work — check
-  `site/README.md`'s "Current content state" section before assuming any given video/image is real.
-  Several real videos also sit unwired directly in `site/public/` (not under `public/content/`)
-  waiting to be sorted into the right content folders — same section covers this.
+- **All content is real now** — no `meta.json` in the tree is flagged `"stockPlaceholder": true`
+  anymore. If you see that flag anywhere, treat it as new/unexpected, not the norm.
+- **Two repos, one deployment.** This monorepo is where editing happens; `haitham72/Portfolio` on
+  GitHub is a separate standalone repo that Vercel's live site actually deploys from, kept in
+  sync via `git subtree split -P "Fujeira hiring" -b fujeira-export` + push (full command in
+  `site/README.md`'s Deployment section). **Pushing only to this monorepo's `origin` does nothing
+  for the live site** — that gap already cost a full debugging session once ("nothing changed" on
+  Vercel turned out to mean "never synced to the repo Vercel reads from"). Don't assume a fix is
+  live until it's been pushed both places.
 
 ## Layout
 
-```
+```text
 Fujeira hiring/
 ├── CLAUDE.md          # this file
 ├── PLAN.md            # design spec / build plan — the "why"
-├── OLD/               # reference material (Anamorph reference site save, prior Base44 build,
-│                       #   original prompt drafts) — mine for real copy/facts, don't rebuild from it
 ├── me.jpg              # user's photo, already wired into Hero + About
 └── site/               # the actual Next.js app — README.md here has full current state
     ├── README.md

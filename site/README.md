@@ -34,6 +34,13 @@ mentions that a fuller site exists behind it. **You approve access by hand**: Su
 → Table Editor → `users` → check the `access` box for that email. There's deliberately no
 in-app admin UI for this.
 
+**`/preview` is not a bypass path in `middleware.ts`** — it still goes through the full
+auth/access check (only `/login` and `/auth/callback` skip it, since those must be reachable
+before a session exists at all). This matters: it's what lets an approved user's browser get
+redirected from `/preview` to `/` once you flip their `access` to true — without running the
+check on `/preview` too, that redirect is unreachable and they'd refresh into `/preview` forever
+no matter what you change in Supabase. Don't add `/preview` back to the bypass list.
+
 **Setup** (all of this needs your own Supabase project + Google Cloud OAuth credentials — I have
 no way to create either for you):
 
@@ -89,15 +96,22 @@ Empty folders render a placeholder, never a broken layout — in dev, empty slot
 | `09-simple/` | The `/preview` gallery ONLY | never appears on the real site — numbered video files, no `meta.json` |
 | `05-services/`, `06-about/`, `07-reviews/` | Toolkit media (unused — Toolkit uses hardcoded logos now), About portrait, testimonials | `07-reviews` hides entirely if empty; no fabricated testimonials, ever |
 
-**Current content state:** `03-selected-work`'s 3 projects and `08-campaigns` are still free stock
-media (Picsum photos, trimmed public-domain Blender Foundation clips), each tagged
-`"stockPlaceholder": true` in its `meta.json` — shows a small red badge in dev, invisible in
-prod, but **not real work**. There are also several real videos sitting **unwired** directly in
-`public/` (not under `public/content/`) — `ramadan - 2018/2019/2021/2023/2025.mp4`,
-`national day - 2021.mp4`, `happy new year - 2019.mp4`, `rashed - 2021.mp4`,
-`satelite - 2020.mp4`, `twins - 2023.mp4`, `Saudi National Day-2024 option 01.mp4` — none of
-these are referenced by any section yet. The Ramadan set in particular maps naturally onto
-`08-campaigns/02-ramadan/`'s edition-per-year structure.
+**Current content state:** all real work now — no `meta.json` in the tree is flagged
+`"stockPlaceholder": true` anymore. `03-selected-work`'s 3 projects, `04-reels`, and all four
+`08-campaigns` groups (Ramadan, National Day, Eid, UIUX) are real footage.
+
+**Media can be served from Supabase Storage instead of bundled with the app** — set
+`MEDIA_BASE_URL` (see `.env.local.example`) to
+`https://<project-ref>.supabase.co/storage/v1/object/public` and every URL `lib/content.ts`
+returns switches from the local `/content/...` path to that CDN, with no other code change
+(`toPublicUrl()` is the single choke point every media URL flows through). Run
+`node --env-file=.env.local scripts/sync-content-to-supabase.mjs` to mirror `public/content/`
+into a public `content` bucket first (rerunnable — `upsert: true`, only uploads recognized media
+extensions, skips `meta.json`/`README.txt`). Leave `MEDIA_BASE_URL` unset and nothing changes —
+this is currently unset in both local dev and Vercel, so production still serves from its own
+bundled `public/content/` as of this writing. Flipping it also needs `next.config.ts`'s
+`images.remotePatterns` (already wildcarded to `*.supabase.co`, done) — that's only for
+`next/image`, plain `<video>`/`<img>` tags don't need it.
 
 ## Architecture
 
@@ -106,11 +120,20 @@ these are referenced by any section yet. The Ramadan set in particular maps natu
   original 6% — the subtle version wasn't visible enough).
 - **Sound** (`components/chrome/SoundProvider.tsx`) — global mute state, not per-video. Starts
   muted (hard browser requirement — autoplay-with-sound is blocked everywhere without a prior
-  gesture) and auto-unmutes on the visitor's first scroll/click/keypress, so it *feels* on by
-  default without breaking autoplay. Manual toggle lives in `FrameHUD`. `LazyVideo` takes a
-  `forceMuted` prop for cases that should never respect the toggle (Campaigns' grid previews —
-  several can be near-visible at once, and letting them all compete for audio, or compete with
-  the modal's audio, was the actual bug behind "sound plays over everything").
+  gesture, no code workaround exists) and auto-unmutes on the visitor's first click/tap/keypress.
+  **Not** mouse-wheel scroll — deliberately excluded, browsers don't treat it as a strong enough
+  gesture for unmuting already-playing media; including it was the cause of an earlier
+  "have to toggle sound off/on myself to hear it" bug. `SoundPrompt` shows an unmissable,
+  self-dismissing "tap for sound" button (a real `onClick`, not a passthrough banner) for anyone
+  who only scrolls and never taps anything else. `claimExclusiveSound()` fires whenever a video
+  becomes the visible one (LazyVideo's and Reels' own IntersectionObserver callbacks) — mutes
+  every other sound-managed video and explicitly re-asserts its own mute state against a
+  module-level `currentlyMuted` value, rather than trusting whatever its own prop/attribute
+  already said. Manual toggle lives in `FrameHUD` (icon-only below the `sm:` breakpoint — full
+  text label plus the FRAME counter don't fit a phone's width). `LazyVideo` takes a `forceMuted`
+  prop for cases that should never respect the toggle (Campaigns' grid previews — several can be
+  near-visible at once, and letting them all compete for audio, or compete with the modal's
+  audio, was the actual bug behind "sound plays over everything").
 - **`LazyVideo`** (`components/media/LazyVideo.tsx`) — the one video primitive almost everything
   uses: single IntersectionObserver per instance handles both lazy-loading and play/pause-on-visibility
   in one effect (a two-effect version had a render-cycle gap between "entered view" and "actually
@@ -123,6 +146,23 @@ these are referenced by any section yet. The Ramadan set in particular maps natu
   per slide (`components/sections/03SelectedWork.tsx`'s `Slide` — read its comment before
   changing the timing math, the segment-counting is easy to get subtly wrong and has been wrong
   twice already in ways that only showed up as "the middle one has no pause").
+- **`LenisProvider` forces scroll to (0,0) on every fresh mount**, before Lenis is even
+  constructed, and sets `history.scrollRestoration = "manual"`. Every nav link (`Header`,
+  `Footer`, `FrameHUD`'s Play, the overlay menu) points at an in-page hash like `#reels` — Lenis's
+  `anchors: true` option smooth-scrolls to it on click, which is correct, but it also leaves that
+  hash sitting in the URL. Revisit or reload a URL with `#reels` on it and the *browser's own*
+  native behavior jumps straight there before React hydrates, bypassing every scroll-jacking hook
+  in this app entirely — that was a real bug ("site starts at Reels instead of Hero," most videos
+  never autoplaying since Hero/Selected Work above the landing point never got their
+  scroll-into-view trigger). These pinned sections only make sense entered from the top; don't
+  remove this reset to "fix" a perceived jump/flash on load — that's the correction happening,
+  not a bug.
+- **`SplitText`** (`components/motion/SplitText.tsx`) splits into words first, characters within
+  each word — not straight into characters. `.char-mask` spans are `display: inline-block` with
+  no space between them, so a run of them reads as one unbreakable unit to the browser's line
+  wrapper; splitting straight into characters with no word grouping let it break a line between
+  *any* two characters, including mid-word (a real phone screenshot showed "Haitham Moh|amed").
+  If you ever see a mid-word break again, this is the first place to check.
 - **Campaigns** (`lib/content.ts`'s `getCampaigns()` / `components/sections/Campaigns.tsx`) —
   group → editions model. Click opens an Instagram-post-style modal (Lightbox), unmuted,
   prev/next through that edition's own media.
@@ -139,16 +179,33 @@ these are referenced by any section yet. The Ramadan set in particular maps natu
   app-wide, Lenis disabled, video autoplay replaced with poster + native controls, Ticker frozen),
   not bolted on as an afterthought.
 
+## Deployment — two repos, know which one Vercel actually reads
+
+This app lives in two places: this monorepo (`Fujeira hiring/site/`, day-to-day editing) and a
+standalone `haitham72/Portfolio` GitHub repo (root = this folder's contents, `site/` nested one
+level in, produced via `git subtree split -P "Fujeira hiring" -b fujeira-export`). **Vercel's
+"portfolio" project deploys from the standalone Portfolio repo, not this monorepo.** Pushing here
+alone does nothing for the live site — it already caused a real "why hasn't anything changed"
+session once. To actually update the deployed site:
+
+```bash
+git branch -D fujeira-export                              # from the monorepo root
+git subtree split -P "Fujeira hiring" -b fujeira-export
+git push https://github.com/haitham72/Portfolio.git fujeira-export:main
+```
+
+Check it's a clean fast-forward first (`git merge-base --is-ancestor <portfolio's current main sha> fujeira-export`)
+before pushing — it always has been so far, since Portfolio's `main` is only ever written to by
+this exact command.
+
 ## Known gaps / open items
 
-1. **Real work.** See "Current content state" above — replace stock media before anyone outside
-   testing sees this.
-2. **Favicon** is still the default Next.js icon.
-3. **Typeface** is Geist (already wired, zero licensing/network risk) standing in for BDO
+1. **Favicon** is still the default Next.js icon.
+2. **Typeface** is Geist (already wired, zero licensing/network risk) standing in for BDO
    Grotesk/General Sans/Neue Montreal/Satoshi — swap in `app/layout.tsx` if you license one.
-4. **Not built:** the hidden Film Runner easter egg from the original plan (explicitly the
+3. **Not built:** the hidden Film Runner easter egg from the original plan (explicitly the
    safest thing in it to cut).
-5. **No browser/screenshot tool available to me** — anything requiring an actual look (motion
-   feel, responsive breakpoints, and now, everything behind the sign-in gate, since I can't
-   authenticate as a real Google user) needs you to check directly. I can only verify route
-   status codes and code-level logic, not rendered/gated content.
+4. **No browser/device automation available to me** — I can't drive an actual browser or phone
+   myself. I can read screenshots you send (and have — that's how several mobile-only bugs in
+   this file got found and fixed), verify route status codes, and reason about layout from the
+   component code, but an actual look at motion feel or a live render is on you.
