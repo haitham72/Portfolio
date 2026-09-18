@@ -27,19 +27,13 @@ export const viewport: Viewport = {
   themeColor: "#0a0a0a",
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full`}>
-      {/* suppressHydrationWarning here is scoped to this one tag, for one known
-          cause: the Grammarly browser extension injects data-gr-ext-installed /
-          data-new-gr-c-s-check-loaded onto <body> before React hydrates, which
-          otherwise reports as a false-positive hydration mismatch. */}
       <body className="min-h-full bg-bg text-text antialiased" suppressHydrationWarning>
-        {/* reducedMotion="user" makes every whileInView/animate transition in the app
-            collapse to instant when the OS prefers-reduced-motion is set — the single
-            highest-leverage piece of PLAN.md's "built into every primitive" rule. */}
         <MotionConfig reducedMotion="user">
           <SoundProvider>
             <LoadSequenceProvider>
