@@ -61,7 +61,18 @@ async function notifyNewSignIn(email: string, ip: string) {
   }
 }
 
+// Emergency escape hatch: set PUBLIC_MODE=true in Vercel's env vars (then
+// redeploy) to drop the gate entirely — no Google sign-in, no /preview,
+// everyone with the URL sees the real site. This makes the WHOLE site
+// public to anyone who has the link, not just one intended recipient —
+// there's no way to bypass auth for a single person without some form of
+// auth. Meant to be temporary: flip it back to false (or remove the var)
+// and redeploy once the visit that needed it is over.
+const PUBLIC_MODE = process.env.PUBLIC_MODE === "true";
+
 export async function middleware(request: NextRequest) {
+  if (PUBLIC_MODE) return NextResponse.next();
+
   const { pathname } = request.nextUrl;
 
   if (BYPASS_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
