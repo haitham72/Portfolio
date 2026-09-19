@@ -22,6 +22,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: `${SITE.brand} — ${SITE.title}`,
   description: `${SITE.tagline}. 12+ years behind the frame.`,
+  // Unconditional, not tied to PUBLIC_MODE — this is a private hiring
+  // preview, never meant to turn up in search results. While the sign-in
+  // gate is on, crawlers can't get past /login anyway, so this is a no-op
+  // there; the moment it matters is if PUBLIC_MODE=true is ever left on
+  // for a while, which otherwise leaves the whole real site freely
+  // crawlable and indexable with nothing telling search engines not to.
+  robots: { index: false, follow: false },
 };
 
 export const viewport: Viewport = {
