@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import { MotionConfig } from "motion/react";
+import { Analytics } from "@vercel/analytics/next";
 import LenisProvider from "@/components/chrome/LenisProvider";
 import LoadSequenceProvider from "@/components/chrome/LoadSequenceProvider";
 import SoundProvider from "@/components/chrome/SoundProvider";
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             </LoadSequenceProvider>
           </SoundProvider>
         </MotionConfig>
+        <Analytics />
       </body>
     </html>
   );
