@@ -14,6 +14,19 @@
   --rec: #ff4500; /* REC dot / accent */
   --rec-deep: #db3903; /* accent pressed */
   --warn: #ef0008; /* error state only */
+
+  /* Campaign thumbnail size — the only two numbers that control every
+     campaign card's size site-wide (components/sections/Campaigns.tsx
+     reads this variable instead of a hardcoded width). Cards are a fixed
+     9:16 ratio, so height always follows width automatically — just edit
+     these two, no code changes needed. */
+  --campaign-thumb-w: 220px; /* below 640px (Tailwind's `sm` breakpoint) */
+}
+
+@media (min-width: 640px) {
+  :root {
+    --campaign-thumb-w: 280px; /* 640px and up */
+  }
 }
 
 @theme inline {

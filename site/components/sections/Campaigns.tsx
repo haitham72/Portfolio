@@ -23,7 +23,9 @@ function EditionCard({ edition, colorIndex }: { edition: CampaignEdition; colorI
   const ratioClass = slide?.kind === "video" ? "aspect-[9/16]" : "aspect-[9/16]";
 
   return (
-    <div className="w-[220px] shrink-0 snap-start sm:w-[280px]">
+    // Width comes from --campaign-thumb-w (app/globals.css) — a single
+    // pair of numbers there controls every campaign card's size site-wide.
+    <div className="shrink-0 snap-start" style={{ width: "var(--campaign-thumb-w)" }}>
       <button
         type="button"
         onClick={() => slide && setOpen(true)}
