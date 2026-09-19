@@ -213,24 +213,13 @@ bundled `public/content/` as of this writing. Flipping it also needs `next.confi
   app-wide, Lenis disabled, video autoplay replaced with poster + native controls, Ticker frozen),
   not bolted on as an afterthought.
 
-## Deployment — two repos, know which one Vercel actually reads
+## Deployment — one repo
 
-This app lives in two places: this monorepo (`Fujeira hiring/site/`, day-to-day editing) and a
-standalone `haitham72/Portfolio` GitHub repo (root = this folder's contents, `site/` nested one
-level in, produced via `git subtree split -P "Fujeira hiring" -b fujeira-export`). **Vercel's
-"portfolio" project deploys from the standalone Portfolio repo, not this monorepo.** Pushing here
-alone does nothing for the live site — it already caused a real "why hasn't anything changed"
-session once. To actually update the deployed site:
-
-```bash
-git branch -D fujeira-export                              # from the monorepo root
-git subtree split -P "Fujeira hiring" -b fujeira-export
-git push https://github.com/haitham72/Portfolio.git fujeira-export:main
-```
-
-Check it's a clean fast-forward first (`git merge-base --is-ancestor <portfolio's current main sha> fujeira-export`)
-before pushing — it always has been so far, since Portfolio's `main` is only ever written to by
-this exact command.
+This checkout's `origin` is `haitham72/Portfolio` on GitHub — the exact repo Vercel's "portfolio"
+project deploys from. A plain `git push origin main` from the repo root goes live; no subtree
+split, no second repo to keep in sync. (An earlier setup used a separate monorepo with a
+`git subtree split` step to publish here — that's been dropped. If you find references to it
+elsewhere, they're stale.)
 
 ## Known gaps / open items
 

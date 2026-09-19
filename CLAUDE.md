@@ -26,18 +26,16 @@ or in the README — don't append session narratives to either.
   code directly.
 - **All content is real now** — no `meta.json` in the tree is flagged `"stockPlaceholder": true`
   anymore. If you see that flag anywhere, treat it as new/unexpected, not the norm.
-- **Two repos, one deployment.** This monorepo is where editing happens; `haitham72/Portfolio` on
-  GitHub is a separate standalone repo that Vercel's live site actually deploys from, kept in
-  sync via `git subtree split -P "Fujeira hiring" -b fujeira-export` + push (full command in
-  `site/README.md`'s Deployment section). **Pushing only to this monorepo's `origin` does nothing
-  for the live site** — that gap already cost a full debugging session once ("nothing changed" on
-  Vercel turned out to mean "never synced to the repo Vercel reads from"). Don't assume a fix is
-  live until it's been pushed both places.
+- **One repo now.** This checkout's `origin` *is* `haitham72/Portfolio` on GitHub — the exact repo
+  Vercel deploys from. A plain `git push origin main` from here goes live; there is no separate
+  monorepo to sync from anymore and no subtree-split step. (An earlier version of this project did
+  use a separate monorepo with a `git subtree split` dance to publish here — that's been dropped;
+  if you find old references to it elsewhere, they're stale.)
 
 ## Layout
 
 ```text
-Fujeira hiring/
+./                      # repo root = this checkout's contents; origin = haitham72/Portfolio
 ├── CLAUDE.md          # this file
 ├── PLAN.md            # design spec / build plan — the "why"
 ├── me.jpg              # user's photo, already wired into Hero + About
