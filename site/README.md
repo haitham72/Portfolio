@@ -1,9 +1,10 @@
 # HaithamMotion — Portfolio Site
 
 Next.js 15 (App Router) + TypeScript + Tailwind v4 + `motion` + `lenis` + Supabase (auth + a
-`users` table). Built per `../PLAN.md`; the design system there (colors, type scale, easing
-curve, motion tokens) is the source of truth for *why* things look the way they do — this file
-covers what's built and how to run it.
+`users` table). This file covers what's built and how to run it. The original design system
+(colors, type scale, easing curve, motion tokens) and build plan lived in `../PLAN.md`, which has
+since been reduced to a media-hosting decision — the full spec is in git history
+(`git show 7b65ed9:PLAN.md`) if you need the *why* behind a visual or motion choice.
 
 Package manager is **pnpm** — this machine's global npm config restricts install scripts to pnpm
 only (`allow-scripts=pnpm` in the user `.npmrc`), so plain `npm install` fails here by design.

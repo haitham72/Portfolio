@@ -6,10 +6,12 @@ touching code. This file exists so a fresh session doesn't have to re-derive the
 ## What this is
 
 A motion-design portfolio site (Next.js 15) built for a Fujairah job interview, gated behind
-Google sign-in via Supabase. The build spec/design system is `PLAN.md` (colors, type scale,
-easing, section-by-section behavior) — read it for *why* something looks the way it does;
-`site/README.md` for *what's currently built and working*. History lives in `git log`, not here
-or in the README — don't append session narratives to either.
+Google sign-in via Supabase. The site is built and shipped. `site/README.md` is *what's currently
+built and working* — read it first. `PLAN.md` used to be the build spec/design system (colors,
+type scale, easing, section-by-section behavior); it has been reduced to a single forward-looking
+media-hosting decision, and the original 433-line spec now lives only in git history
+(`git show 7b65ed9:PLAN.md`) — go there for *why* something looks the way it does. History lives
+in `git log`, not here or in the README — don't append session narratives to either.
 
 ## Before you do anything
 
@@ -58,7 +60,7 @@ or in the README — don't append session narratives to either.
 ```text
 ./                      # repo root = this checkout's contents; origin = haitham72/Portfolio
 ├── CLAUDE.md          # this file
-├── PLAN.md            # design spec / build plan — the "why"
+├── PLAN.md            # media-hosting decision for next time (was the design spec)
 ├── me.jpg              # user's photo, already wired into Hero + About
 └── site/               # the actual Next.js app — README.md here has full current state
     ├── README.md
@@ -69,7 +71,8 @@ or in the README — don't append session narratives to either.
 
 ## Doc discipline
 
-Same rule as the rest of this workspace: each doc has one job. `PLAN.md` = spec. `README.md` =
+Same rule as the rest of this workspace: each doc has one job. `PLAN.md` = the media-hosting
+decision. `README.md` =
 current state (replace stale text when things change, don't append a changelog). `git log` =
 history. If you're about to write "Round N — fixed X," that's a commit message, not a README
 paragraph.
