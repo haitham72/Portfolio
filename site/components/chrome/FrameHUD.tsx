@@ -26,7 +26,15 @@ export default function FrameHUD() {
       const height = Math.max(0, Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0));
       return { video, area: width * height };
     }).filter(({ video, area }) => area > 0 && !video.controls && video.paused).sort((a, b) => b.area - a.area)[0]?.video;
-    if (current) { current.muted = muted; current.play().catch(() => {}); }
+    if (!current) return;
+    current.muted = muted;
+    current.play().catch(() => {
+      // Even a real tap on this button can be refused if the mute write
+      // above raced the browser's own gesture check — fall back to muted
+      // playback rather than leaving the video stuck paused.
+      current.muted = true;
+      current.play().catch(() => {});
+    });
   }
 
   return (

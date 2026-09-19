@@ -68,6 +68,25 @@ export function claimExclusiveSound(video: HTMLVideoElement) {
 }
 
 /**
+ * Playback always wins over sound: a video that has already started muted
+ * autoplay must never be paused just to try turning its sound on. If the
+ * browser refuses an out-of-gesture unmute (rejecting the play() promise
+ * that follows `muted = false`), this re-arms sound for that exact video on
+ * the visitor's next real tap/key/touch instead of leaving it silently
+ * muted forever or, worse, paused. Removes its own listeners after the
+ * first fire; a no-op if the video has since been removed from the DOM or
+ * already stopped playing on its own.
+ */
+export function restoreSoundOnNextGesture(video: HTMLVideoElement): void {
+  function retry() {
+    UNLOCK_EVENTS.forEach((evt) => window.removeEventListener(evt, retry));
+    if (!video.isConnected || video.paused) return;
+    video.muted = currentlyMuted;
+  }
+  UNLOCK_EVENTS.forEach((evt) => window.addEventListener(evt, retry, { passive: true }));
+}
+
+/**
  * Sound is meant to be on by default, but autoplaying video *cannot*
  * literally start unmuted — Chrome/Safari/Firefox all block
  * autoplay-with-sound with zero prior user interaction. Start muted

@@ -51,14 +51,24 @@ no way to create either for you):
 2. Supabase dashboard → Settings → API → copy **Project URL**, **anon public** key, **service_role** key.
 3. Google Cloud Console → APIs & Services → OAuth consent screen → **publish it** (not "Testing" —
    Testing mode only allows sign-in from accounts you manually list, which defeats open sign-in).
-   Then Credentials → Create OAuth client ID (Web application) → Authorized redirect URI:
-   `https://<project-ref>.supabase.co/auth/v1/callback`.
+   Set **App name** here too — this is what Google's consent screen actually shows the visitor
+   ("Sign in to continue to ___"); leave it on the Google Cloud project's own default name and
+   that's what strangers see, not your brand. Then Credentials → Create OAuth client ID (Web
+   application) → Authorized redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback`.
 4. Supabase dashboard → Authentication → Providers → Google → paste the Client ID/Secret → Save.
-5. Copy `.env.local.example` → `.env.local`, fill in the three Supabase values from step 2.
+5. Supabase dashboard → Authentication → URL Configuration → **Redirect URLs** → add
+   `http://localhost:3000/auth/callback`. The app itself always asks for the *current* origin's
+   callback (`signInWithOAuth`'s `redirectTo` in `app/login/page.tsx` uses
+   `window.location.origin`, so it correctly requests `localhost:3000` when you sign in from
+   local dev) — but Supabase checks that requested URL against this allow-list and silently
+   falls back to the dashboard's **Site URL** (normally your production domain) for anything not
+   on it. Skip this step and every local sign-in bounces you to production instead of staying on
+   localhost, no matter what the code asks for — this isn't a code bug to chase.
+6. Copy `.env.local.example` → `.env.local`, fill in the three Supabase values from step 2.
    `SUPABASE_SERVICE_ROLE_KEY` is server-only — read in `middleware.ts` alone, never in a
    `"use client"` file, never prefixed `NEXT_PUBLIC_`.
-6. Same three vars (plus optional `RESEND_API_KEY`/`NOTIFY_EMAIL`, see below) on Vercel before deploying.
-7. Restart `pnpm dev` (env vars only load at startup) and test: `/` → bounced to `/login` →
+7. Same three vars (plus optional `RESEND_API_KEY`/`NOTIFY_EMAIL`, see below) on Vercel before deploying.
+8. Restart `pnpm dev` (env vars only load at startup) and test: `/` → bounced to `/login` →
    sign in → `/preview`. Flip your row to `access = true` in Supabase, refresh → the real site.
 
 Fails loudly (500 — "Your project's URL and Key are required") if steps 1-5 aren't done, rather
@@ -133,30 +143,54 @@ bundled `public/content/` as of this writing. Flipping it also needs `next.confi
   text label plus the FRAME counter don't fit a phone's width). `LazyVideo` takes a `forceMuted`
   prop for cases that should never respect the toggle (Campaigns' grid previews — several can be
   near-visible at once, and letting them all compete for audio, or compete with the modal's
-  audio, was the actual bug behind "sound plays over everything").
+  audio, was the actual bug behind "sound plays over everything"). **Every autoplay path is
+  muted-first**: `video.muted = true` then `.play()`, and only once that resolves does
+  `claimExclusiveSound()` try to turn sound on — mobile browsers reject an out-of-gesture unmute
+  by silently pausing the video, so if `video.paused` is still true right after, the code forces
+  it back to muted+playing and calls `restoreSoundOnNextGesture()` to re-arm sound on the
+  visitor's next tap. Playback always wins over sound; a video must never end up stuck paused
+  just because sound couldn't be turned on. `<video>` elements themselves render `muted` as a
+  hardcoded JSX attribute everywhere — the imperative sequence above is the only thing that ever
+  flips it, so a React-driven `muted={someState}` prop can't race it and re-trigger the
+  autoplay-block in the first place.
 - **`LazyVideo`** (`components/media/LazyVideo.tsx`) — the one video primitive almost everything
   uses: single IntersectionObserver per instance handles both lazy-loading and play/pause-on-visibility
   in one effect (a two-effect version had a render-cycle gap between "entered view" and "actually
   starts playing" — consolidated). Reels (`04Reels.tsx`) uses a raw `<video>` instead because of
   its swipe-transition timing, so it has its own separate visibility-pause effect — if audio/playback
-  bugs show up again, check both places, they don't share the fix automatically.
+  bugs show up again, check both places, they don't share the fix automatically. **Reels' video
+  ref is a per-slug callback cached in a `Map`, not a bare `setVideoNode`** — `AnimatePresence`
+  keeps the outgoing slide's `<video>` mounted for its whole exit transition, so it unmounts
+  *after* the incoming slide's video has already attached; a single shared ref callback meant
+  that late unmount's `ref(null)` call stomped the already-current video's state right out from
+  under it, which is why the second reel used to play once and then permanently stop, and the
+  play button on it did nothing (`videoNode` was `null`). A detaching video's own callback now
+  only nulls state if it's still the node state actually points at.
 - **Pinned scroll sections** (Hero, Selected Work, Reels) — sticky child inside a tall outer
   track, `useScroll`/`useTransform` map scroll progress to visual state, never touching the wheel
   event directly. Selected Work's panels follow an explicit **enter → dwell → recede** sequence
   per slide (`components/sections/03SelectedWork.tsx`'s `Slide` — read its comment before
   changing the timing math, the segment-counting is easy to get subtly wrong and has been wrong
   twice already in ways that only showed up as "the middle one has no pause").
-- **`LenisProvider` forces scroll to (0,0) on every fresh mount**, before Lenis is even
-  constructed, and sets `history.scrollRestoration = "manual"`. Every nav link (`Header`,
-  `Footer`, `FrameHUD`'s Play, the overlay menu) points at an in-page hash like `#reels` — Lenis's
-  `anchors: true` option smooth-scrolls to it on click, which is correct, but it also leaves that
-  hash sitting in the URL. Revisit or reload a URL with `#reels` on it and the *browser's own*
-  native behavior jumps straight there before React hydrates, bypassing every scroll-jacking hook
-  in this app entirely — that was a real bug ("site starts at Reels instead of Hero," most videos
-  never autoplaying since Hero/Selected Work above the landing point never got their
-  scroll-into-view trigger). These pinned sections only make sense entered from the top; don't
-  remove this reset to "fix" a perceived jump/flash on load — that's the correction happening,
-  not a bug.
+- **`LenisProvider` forces scroll to (0,0) on every fresh mount**, in a `useLayoutEffect` (before
+  paint) rather than a plain `useEffect`, and sets `history.scrollRestoration = "manual"`. Every
+  nav link (`Header`, `Footer`, `FrameHUD`'s Play, the overlay menu) points at an in-page hash
+  like `#reels` — Lenis's `anchors: true` option smooth-scrolls to it on click, which is correct,
+  but it also leaves that hash sitting in the URL. Revisit or reload a URL with `#reels` on it
+  and the *browser's own* native behavior jumps straight there before React hydrates, bypassing
+  every scroll-jacking hook in this app entirely — that was a real bug ("site starts at Reels
+  instead of Hero," most videos never autoplaying since Hero/Selected Work above the landing
+  point never got their scroll-into-view trigger). These pinned sections only make sense entered
+  from the top; don't remove this reset to "fix" a perceived jump/flash on load — that's the
+  correction happening, not a bug. This is now defended in three places, since a single
+  `useEffect` reset alone still lost the race against the browser's own hash-jump: (1)
+  `app/layout.tsx` has a `beforeInteractive` inline script that strips a hash from the URL before
+  `<body>` is even parsed — before the target element exists for the browser to jump to at all;
+  (2) `LenisProvider`'s own reset also re-asserts `scrollTo(0,0)` on the next animation frame and
+  on `load`, since late layout shifts (fonts, video metadata) can move scroll position after the
+  first synchronous call; (3) a delegated `click` listener on any `a[href^="#"]` scrubs the hash
+  back out of the URL right after Lenis's own smooth-scroll fires, so a hash from normal in-page
+  navigation never survives into a future reload either.
 - **`SplitText`** (`components/motion/SplitText.tsx`) splits into words first, characters within
   each word — not straight into characters. `.char-mask` spans are `display: inline-block` with
   no space between them, so a run of them reads as one unbreakable unit to the browser's line

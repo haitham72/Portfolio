@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { prefersReducedMotion } from "@/lib/motion";
-import { useSound, claimExclusiveSound } from "@/components/chrome/SoundProvider";
+import { useSound, claimExclusiveSound, restoreSoundOnNextGesture } from "@/components/chrome/SoundProvider";
 
 interface LazyVideoProps {
   src: string;
@@ -26,12 +26,24 @@ export default function LazyVideo({ src, poster, className = "", ratio = "16:9",
 
   useEffect(() => setReduced(prefersReducedMotion()), []);
 
+  // Muted-first: autoplay-with-sound is never permitted without a prior
+  // gesture, so playback always starts muted, then claims sound afterward.
+  // If the browser punishes that follow-up unmute by pausing the video,
+  // playback wins — force it back to muted and playing, and defer sound to
+  // the visitor's next real tap rather than leaving it stalled.
   function tryPlay() {
     const video = videoRef.current;
     if (!video || reduced || document.hidden) return;
-    video.muted = muted;
-    if (!forceMuted) claimExclusiveSound(video);
-    video.play().catch(() => setPlaying(false));
+    video.muted = true;
+    video.play().then(() => {
+      if (forceMuted) return;
+      claimExclusiveSound(video);
+      if (video.paused) {
+        video.muted = true;
+        video.play().catch(() => {});
+        restoreSoundOnNextGesture(video);
+      }
+    }).catch(() => setPlaying(false));
   }
 
   useEffect(() => {
@@ -68,7 +80,7 @@ export default function LazyVideo({ src, poster, className = "", ratio = "16:9",
           ref={videoRef}
           data-sound-managed={forceMuted ? undefined : "true"}
           className="absolute inset-0 h-full w-full object-cover"
-          muted={muted}
+          muted
           autoPlay={!reduced}
           loop={!reduced}
           controls={reduced}

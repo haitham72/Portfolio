@@ -38,10 +38,20 @@ export default function Lightbox({ open, onClose, onNext, onPrev, children }: Li
           transition={{ duration: dur.chrome, ease: ease.out }}
           onClick={onClose}
         >
-          <button className="btn-pill btn-pill--outline absolute right-6 top-6 text-ui-sm" onClick={onClose}>
-            Close (Esc)
-          </button>
-          <div className="max-h-full max-w-full" onClick={(e) => e.stopPropagation()}>
+          <div className="relative max-h-full max-w-full" onClick={(e) => e.stopPropagation()}>
+            {/* On the card's own corner, not the viewport's — at 92vw wide on
+                a phone the card fills almost the whole screen, so a button
+                pinned to the viewport's top-right sat underneath it and was
+                unreachable. Click-outside (the backdrop's own onClick above)
+                and Esc both still close it too. */}
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={onClose}
+              className="absolute right-2 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-bg/80 text-lg text-text-hi backdrop-blur-sm"
+            >
+              <span aria-hidden>&times;</span>
+            </button>
             {children}
           </div>
         </motion.div>

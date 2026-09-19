@@ -5,7 +5,7 @@ import { AnimatePresence, motion, useScroll, useMotionValueEvent } from "motion/
 import SectionHeader from "@/components/motion/SectionHeader";
 import SplitText from "@/components/motion/SplitText";
 import PhoneFrame from "@/components/media/PhoneFrame";
-import { useSound, claimExclusiveSound } from "@/components/chrome/SoundProvider";
+import { claimExclusiveSound, restoreSoundOnNextGesture } from "@/components/chrome/SoundProvider";
 import { gradientFor } from "@/lib/placeholders";
 import { ease, prefersReducedMotion } from "@/lib/motion";
 import type { ReelItem } from "@/lib/content";
@@ -23,6 +23,14 @@ export default function Reels({ reels }: { reels: ReelItem[] }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const prevActiveRef = useRef(0);
+  // AnimatePresence keeps the outgoing slide's <video> mounted for the
+  // whole 0.45s exit transition, so it unmounts ~450ms *after* the
+  // incoming slide's video has already attached. A single `ref={setVideoNode}`
+  // shared across every slide meant that late unmount called setVideoNode(null)
+  // and stomped the already-current video's node — this map lets a video's
+  // own detach only clear state if it's still the node state points at.
+  const videoMapRef = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const videoRefCallbacksRef = useRef<Map<string, (node: HTMLVideoElement | null) => void>>(new Map());
   const [videoNode, setVideoNode] = useState<HTMLVideoElement | null>(null);
   const [stageVisible, setStageVisible] = useState(false);
   const [active, setActive] = useState(0);
@@ -30,9 +38,27 @@ export default function Reels({ reels }: { reels: ReelItem[] }) {
   const [runtime, setRuntime] = useState("--:--");
   const [reduced, setReduced] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const { muted } = useSound();
 
   useEffect(() => setReduced(prefersReducedMotion()), []);
+
+  function getVideoRef(slug: string) {
+    let callback = videoRefCallbacksRef.current.get(slug);
+    if (!callback) {
+      callback = (node) => {
+        if (node) {
+          videoMapRef.current.set(slug, node);
+          setVideoNode(node);
+        } else {
+          const existing = videoMapRef.current.get(slug);
+          videoMapRef.current.delete(slug);
+          existing?.pause();
+          setVideoNode((prev) => (prev === existing ? null : prev));
+        }
+      };
+      videoRefCallbacksRef.current.set(slug, callback);
+    }
+    return callback;
+  }
 
   const { scrollYProgress } = useScroll({ target: trackRef, offset: ["start start", "end start"] });
 
@@ -62,51 +88,59 @@ export default function Reels({ reels }: { reels: ReelItem[] }) {
     return () => observer.disconnect();
   }, []);
 
-  function playVideo(video: HTMLVideoElement | null = videoNode) {
-    if (!video || !hasMedia || reduced || !stageVisible || document.hidden) return;
-    video.muted = muted;
-    claimExclusiveSound(video);
-    video.play().catch(() => setPlaying(false));
+  // Muted-first, same as LazyVideo: autoplay-with-sound is never permitted
+  // without a prior gesture. Shared by both the effect-driven autoplay and
+  // the tap-to-play button so neither path can leave a reel stuck paused.
+  function attemptPlay(video: HTMLVideoElement | null) {
+    if (!video || !hasMedia || reduced || document.hidden) return;
+    video.muted = true;
+    video.play().then(() => {
+      claimExclusiveSound(video);
+      if (video.paused) {
+        video.muted = true;
+        video.play().catch(() => {});
+        restoreSoundOnNextGesture(video);
+      }
+    }).catch(() => setPlaying(false));
   }
 
-  // One playback owner for the active reel. It starts after the actual video
-  // node mounts and stops as soon as the pinned stage leaves for Campaigns.
+  /** Autoplay path — gated on the pinned stage actually being visible. */
+  function playVideo(video: HTMLVideoElement | null = videoNode) {
+    if (!stageVisible) return;
+    attemptPlay(video);
+  }
+
+  /** Tap-to-play path — a real gesture must never be swallowed by a stale
+   *  IntersectionObserver reading, so this skips the stageVisible gate. */
+  function forcePlay(video: HTMLVideoElement | null = videoNode) {
+    attemptPlay(video);
+  }
+
+  // One playback owner for the active reel: plays while the pinned stage is
+  // visible, pauses the moment it isn't (leaving for Campaigns included).
+  // `muted` is deliberately not a dependency here — toggling sound must
+  // never pause and restart the reel; SoundProvider's own DOM write already
+  // keeps every sound-managed video's mute state in sync on toggle.
   useEffect(() => {
     const video = videoNode;
     if (!video || !hasMedia || reduced) return;
 
     if (stageVisible) playVideo(video);
-    else {
-      video.pause();
-      setPlaying(false);
-    }
+    else video.pause();
 
     return () => {
       video.pause();
-      setPlaying(false);
     };
-  }, [videoNode, active, hasMedia, reduced, stageVisible, muted]);
-
-  useEffect(() => {
-    if (stageVisible) playVideo();
-    else {
-      videoNode?.pause();
-      setPlaying(false);
-    }
-  }, [stageVisible]);
+  }, [videoNode, active, hasMedia, reduced, stageVisible]);
 
   useEffect(() => {
     const onVisibility = () => {
-      if (document.hidden) {
-        videoNode?.pause();
-        setPlaying(false);
-      } else {
-        playVideo();
-      }
+      if (document.hidden) videoNode?.pause();
+      else playVideo();
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [videoNode, stageVisible, muted, reduced, hasMedia]);
+  }, [videoNode, stageVisible, reduced, hasMedia]);
 
   useEffect(() => {
     setRuntime("--:--");
@@ -139,8 +173,8 @@ export default function Reels({ reels }: { reels: ReelItem[] }) {
             <div className="relative h-full w-full overflow-hidden bg-surface">
               <AnimatePresence initial={false} custom={dir}>
                 <motion.div key={current.slug} custom={dir} variants={reduced ? undefined : swipeVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.45, ease: ease.out }} className="absolute inset-0" style={{ background: hasMedia ? undefined : gradientFor(active) }}>
-                  {hasMedia && <video ref={setVideoNode} data-sound-managed="true" className="h-full w-full object-cover" src={current.poster ? current.src : `${current.src}#t=0.1`} poster={current.poster ?? undefined} muted={muted} loop={!reduced} autoPlay={false} controls={reduced} playsInline preload="auto" onLoadedMetadata={(event) => setRuntime(formatRuntime(event.currentTarget.duration))} onCanPlay={() => playVideo()} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} />}
-                  {hasMedia && !playing && !reduced && <button type="button" aria-label="Play reel" className="absolute left-1/2 top-1/2 z-20 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-text-hi/70 bg-bg/70 text-2xl text-text-hi backdrop-blur-sm" onClick={() => playVideo()}><span aria-hidden className="translate-x-0.5">▶</span></button>}
+                  {hasMedia && <video ref={getVideoRef(current.slug)} data-sound-managed="true" className="h-full w-full object-cover" src={current.poster ? current.src : `${current.src}#t=0.1`} poster={current.poster ?? undefined} muted loop={!reduced} autoPlay={false} controls={reduced} playsInline preload="auto" onLoadedMetadata={(event) => setRuntime(formatRuntime(event.currentTarget.duration))} onCanPlay={(event) => playVideo(event.currentTarget)} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} />}
+                  {hasMedia && !playing && !reduced && <button type="button" aria-label="Play reel" className="absolute left-1/2 top-1/2 z-20 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-text-hi/70 bg-bg/70 text-2xl text-text-hi backdrop-blur-sm" onClick={() => forcePlay()}><span aria-hidden className="translate-x-0.5">▶</span></button>}
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4 text-ui-sm text-text-hi"><p className="tnum text-meta">EDITOR · COLOURIST &nbsp; RUNTIME {runtime} &nbsp; RATIO 9:16</p><p className="mt-1">@haithammotion · {current.title}</p></div>
                 </motion.div>
               </AnimatePresence>

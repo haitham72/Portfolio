@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, type ReactNode } from "react";
 import Lenis from "lenis";
 import { frame, cancelFrame } from "motion";
 import { prefersReducedMotion } from "@/lib/motion";
@@ -16,22 +16,50 @@ import { prefersReducedMotion } from "@/lib/motion";
  * native and instant, no smoothing, no inertia.
  */
 export default function LenisProvider({ children }: { children: ReactNode }) {
-  useEffect(() => {
-    // Every nav link (Header, Footer, FrameHUD's Play, the overlay menu)
-    // points at an in-page hash like #reels — clicking one leaves that hash
-    // sitting in the URL. Reload, revisit, or share that URL later and the
-    // BROWSER's own native behavior jumps straight to that section before
-    // React even hydrates, completely bypassing every scroll-jacking hook
-    // here. Hero/Selected Work never get their normal scroll-into-view
-    // trigger, which is also why videos above the landing point never
-    // autoplayed. These pinned sections only make sense entered from the
-    // top — always force it, regardless of any hash or the browser's own
-    // scroll-position memory.
-    if (typeof window !== "undefined" && "scrollRestoration" in window.history) {
+  // useLayoutEffect (not useEffect) so this reset commits before the browser
+  // paints. The root layout's own `beforeInteractive` script already strips
+  // a hash from the URL before <body> is even parsed (see app/layout.tsx) —
+  // this is the second layer, for the plain case of a mid-page scroll
+  // position the browser restored on its own (no hash involved). Also
+  // re-asserted on the next frame and on `load`, since late-arriving layout
+  // (fonts, images, video metadata) can itself shift scroll position after
+  // this first synchronous call.
+  useLayoutEffect(() => {
+    if ("scrollRestoration" in window.history) {
       window.history.scrollRestoration = "manual";
     }
     window.scrollTo(0, 0);
 
+    const raf = requestAnimationFrame(() => window.scrollTo(0, 0));
+    const onLoad = () => window.scrollTo(0, 0);
+    window.addEventListener("load", onLoad);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("load", onLoad);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Every nav link (Header, Footer, FrameHUD's Play, the overlay menu)
+    // points at an in-page hash like #reels. Lenis's anchors:true smooth-
+    // scrolls to it correctly, but the hash itself is left sitting in the
+    // URL afterward — reload or revisit that URL later and the browser's
+    // own native fragment-scroll jumps straight there before React
+    // hydrates, bypassing every scroll-jacking hook in this app. Strip it
+    // right after the click does its job, so no hash ever survives into a
+    // future page load to begin with.
+    function onClick(event: MouseEvent) {
+      const link = (event.target as HTMLElement).closest("a[href^='#']");
+      if (!link) return;
+      window.setTimeout(() => {
+        if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+      }, 0);
+    }
+    window.addEventListener("click", onClick);
+    return () => window.removeEventListener("click", onClick);
+  }, []);
+
+  useEffect(() => {
     if (prefersReducedMotion()) return;
 
     const lenis = new Lenis({

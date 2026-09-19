@@ -81,6 +81,13 @@
 html {
   background: var(--bg);
   color-scheme: dark;
+  /* `clip`, not `hidden` — `hidden` creates a scroll container, which breaks
+     every `position: sticky` pinned section (Hero, Selected Work, Reels).
+     A stray wide element (an unclipped oversized headline, e.g.) can still
+     make the document reportable as horizontally scrollable; this is the
+     backstop that stops the visible page from ever panning sideways. */
+  overflow-x: clip;
+  overscroll-behavior-x: none;
 }
 
 body {
@@ -89,6 +96,8 @@ body {
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
 }
 
 ::selection {

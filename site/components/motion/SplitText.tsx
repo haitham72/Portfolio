@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { ease, dur, stagger, viewportOnce } from "@/lib/motion";
 
 type Tag = "h1" | "h2" | "h3" | "h4" | "p" | "span" | "div";
+type Trigger = "view" | "mount" | "none";
 
 interface SplitTextProps {
   children: string;
@@ -11,23 +12,37 @@ interface SplitTextProps {
   splitBy?: "char" | "word";
   className?: string;
   delay?: number;
+  /** "view" (default) reveals on scroll-into-view, once. "mount" reveals
+   *  immediately on mount/render — for above-the-fold text that's already
+   *  visible at rest and would otherwise wait on a scroll that never comes.
+   *  "none" skips the animation and renders straight in the rested state. */
+  trigger?: Trigger;
 }
 
-function Char({ ch, index, delay }: { ch: string; index: number; delay: number }) {
+function Char({ ch, index, delay, trigger }: { ch: string; index: number; delay: number; trigger: Trigger }) {
+  const content = ch === " " ? " " : ch;
+
+  if (trigger === "none") {
+    return (
+      <span className="char-mask" aria-hidden>
+        <span>{content}</span>
+      </span>
+    );
+  }
+
+  const transition = { duration: dur.chrome, ease: ease.out, delay: delay + index * stagger.char };
+
   return (
     <span className="char-mask" aria-hidden>
-      <motion.span
-        initial={{ y: "100%", opacity: 0.001 }}
-        whileInView={{ y: "0%", opacity: 1 }}
-        viewport={viewportOnce}
-        transition={{
-          duration: dur.chrome,
-          ease: ease.out,
-          delay: delay + index * stagger.char,
-        }}
-      >
-        {ch === " " ? " " : ch}
-      </motion.span>
+      {trigger === "mount" ? (
+        <motion.span initial={{ y: "100%", opacity: 0.001 }} animate={{ y: "0%", opacity: 1 }} transition={transition}>
+          {content}
+        </motion.span>
+      ) : (
+        <motion.span initial={{ y: "100%", opacity: 0.001 }} whileInView={{ y: "0%", opacity: 1 }} viewport={viewportOnce} transition={transition}>
+          {content}
+        </motion.span>
+      )}
     </span>
   );
 }
@@ -55,6 +70,7 @@ export default function SplitText({
   splitBy = "char",
   className,
   delay = 0,
+  trigger = "view",
 }: SplitTextProps) {
   const Component = motion[as];
   const words = children.split(/(\s+)/);
@@ -73,7 +89,7 @@ export default function SplitText({
         if (splitBy === "word") {
           const i = charIndex;
           charIndex += 1;
-          return <Char key={wi} ch={word} index={i} delay={delay} />;
+          return <Char key={wi} ch={word} index={i} delay={delay} trigger={trigger} />;
         }
         const chars = Array.from(word);
         return (
@@ -81,7 +97,7 @@ export default function SplitText({
             {chars.map((ch, ci) => {
               const i = charIndex;
               charIndex += 1;
-              return <Char key={ci} ch={ch} index={i} delay={delay} />;
+              return <Char key={ci} ch={ch} index={i} delay={delay} trigger={trigger} />;
             })}
           </span>
         );

@@ -61,12 +61,14 @@ export default function Footer() {
         </div>
       </div>
 
-      <a
-        href="#top"
-        className="mt-24 block select-none bg-gradient-to-b from-text-alt/25 to-transparent bg-clip-text text-center text-[16vw] font-semibold leading-none tracking-tighter text-transparent"
-      >
-        {SITE.brand}
-      </a>
+      <div className="mt-24 overflow-hidden">
+        <a
+          href="#top"
+          className="block select-none bg-gradient-to-b from-text-alt/25 to-transparent bg-clip-text text-center text-[13vw] font-semibold leading-none tracking-tighter text-transparent"
+        >
+          {SITE.brand}
+        </a>
+      </div>
 
       <div className="mt-8 flex flex-col items-center gap-2 text-ui-sm text-meta">
         <a href="#top" className="hover:text-text">

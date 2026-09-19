@@ -40,13 +40,13 @@ export default function Hero({ hero }: { hero: HeroContent }) {
         <div className="absolute left-6 top-6 sm:left-10 sm:top-8"><RecTimer /></div>
         <div className="absolute inset-x-6 bottom-28 sm:inset-x-10 sm:bottom-32">
           <h1 className="block max-w-4xl">
-            <SplitText as="div" className="block text-[1.75rem] leading-[0.95] tracking-tight text-text-hi sm:text-[2.625rem] md:text-[3.375rem]">{COPY.heroLine1}</SplitText>
-            <SplitText as="div" delay={0.25} className="block text-[1.75rem] leading-[0.95] tracking-tight text-text-alt sm:text-[2.625rem] md:text-[3.375rem]">{COPY.heroLine2}</SplitText>
-            <SplitText as="div" delay={0.45} className="block text-[1.75rem] leading-[0.95] tracking-tight text-text-alt sm:text-[2.625rem] md:text-[3.375rem]">{COPY.heroLine3}</SplitText>
+            <SplitText as="div" trigger="mount" className="block text-[1.75rem] leading-[0.95] tracking-tight text-text-hi sm:text-[2.625rem] md:text-[3.375rem]">{COPY.heroLine1}</SplitText>
+            <SplitText as="div" delay={0.25} trigger="mount" className="block text-[1.75rem] leading-[0.95] tracking-tight text-text-alt sm:text-[2.625rem] md:text-[3.375rem]">{COPY.heroLine2}</SplitText>
+            <SplitText as="div" delay={0.45} trigger="mount" className="block text-[1.75rem] leading-[0.95] tracking-tight text-text-alt sm:text-[2.625rem] md:text-[3.375rem]">{COPY.heroLine3}</SplitText>
           </h1>
-          <Reveal delay={0.9} className="mt-6 max-w-md text-body text-text-alt">{COPY.heroSub}</Reveal>
+          <Reveal delay={0.9} trigger={skip ? "none" : "mount"} className="mt-6 max-w-md text-body text-text-alt">{COPY.heroSub}</Reveal>
         </div>
-        <Reveal delay={1.15} y={-8} className="absolute right-6 top-28 hidden w-40 overflow-hidden rounded-lg border border-text-alt/10 sm:right-10 sm:block sm:w-48"><PosterImage src={hero.portrait} alt={SITE.name} className="aspect-[3/4] w-full" gradient={gradientFor(1)} /></Reveal>
+        <Reveal delay={1.15} y={-8} trigger={skip ? "none" : "mount"} className="absolute right-6 top-28 hidden w-40 overflow-hidden rounded-lg border border-text-alt/10 sm:right-10 sm:block sm:w-48"><PosterImage src={hero.portrait} alt={SITE.name} className="aspect-[3/4] w-full" gradient={gradientFor(1)} /></Reveal>
       </div>
     </section>
   );
