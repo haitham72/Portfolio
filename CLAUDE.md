@@ -18,12 +18,17 @@ or in the README — don't append session narratives to either.
   silently blocked with a confusing error. Run `site/stop-dev.ps1`, or Ctrl+C the terminal.
 - **`pnpm` only, never `npm`.** This machine's global `.npmrc` restricts install scripts to pnpm;
   plain `npm install` fails by design, not a bug to route around.
-- **The whole site is gated.** Nothing renders without Google sign-in (Supabase Auth + a
-  `users` table you approve rows in manually). This means you can no longer `curl` the homepage
-  and see real content — every route redirects to `/login` unless there's a valid session
-  cookie. Verify route-level logic (status codes, redirects) via curl; verify actual rendered
-  content by asking the user to check in a real signed-in browser, or by reading the component
-  code directly.
+- **The site is gated, with named exceptions.** Nothing renders without Google sign-in (Supabase
+  Auth + a `users` table you approve rows in manually) — the homepage included. This means you
+  can no longer `curl` the homepage and see real content — it redirects to `/login` unless there's
+  a valid session cookie. Verify route-level logic (status codes, redirects) via curl; verify
+  actual rendered content by asking the user to check in a real signed-in browser, or by reading
+  the component code directly. Two things intentionally bypass this: `middleware.ts`'s
+  `BYPASS_PATHS` (`/login`, `/auth/callback`, `/privacy`, `/terms` — the last two exist publicly
+  for Google's OAuth consent screen requirements), and `PUBLIC_MODE=true` (an env var that drops
+  the entire gate for everyone, meant as a temporary escape hatch for a specific high-stakes visit
+  — see `site/README.md`). If a route unexpectedly returns real content with no redirect, check
+  `PUBLIC_MODE` before assuming the gate broke.
 - **All content is real now** — no `meta.json` in the tree is flagged `"stockPlaceholder": true`
   anymore. If you see that flag anywhere, treat it as new/unexpected, not the norm.
 - **One repo now.** This checkout's `origin` *is* `haitham72/Portfolio` on GitHub — the exact repo
@@ -42,7 +47,7 @@ or in the README — don't append session narratives to either.
 └── site/               # the actual Next.js app — README.md here has full current state
     ├── README.md
     ├── stop-dev.ps1
-    ├── supabase/        # schema.sql + migrations for the users table
+    ├── supabase/        # schema.sql + migrations (users + visits tables)
     └── .env.local.example
 ```
 

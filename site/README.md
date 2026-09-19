@@ -25,21 +25,23 @@ If `pnpm dev` throws a webpack "module is not a function" / React Client Manifes
 long hot-reload session, it's stale `.next` HMR state, not a code bug — stop the server,
 `rm -rf .next`, restart.
 
-## The site is gated — nothing is public
+## The site is gated — the real work isn't public
 
-Every route requires Google sign-in. New sign-ins land with `access = false` in Supabase's
-`public.users` table and get shown `/preview` (a small standalone gallery, not the real site,
-and not obviously flagged as "reduced" — it just looks like its own thing). Nothing here
-mentions that a fuller site exists behind it. **You approve access by hand**: Supabase dashboard
-→ Table Editor → `users` → check the `access` box for that email. There's deliberately no
-in-app admin UI for this.
+Every route requires Google sign-in **except** `middleware.ts`'s explicit `BYPASS_PATHS`:
+`/login`, `/auth/callback` (must be reachable before a session exists at all), and `/privacy`/
+`/terms` (plain informational pages, required to be publicly reachable for Google's OAuth consent
+screen links — see below). Everything else, including the homepage, is gated. New sign-ins land
+with `access = false` in Supabase's `public.users` table and get shown `/preview` (a small
+standalone gallery, not the real site, and not obviously flagged as "reduced" — it just looks like
+its own thing). Nothing here mentions that a fuller site exists behind it. **You approve access by
+hand**: Supabase dashboard → Table Editor → `users` → check the `access` box for that email.
+There's deliberately no in-app admin UI for this.
 
-**`/preview` is not a bypass path in `middleware.ts`** — it still goes through the full
-auth/access check (only `/login` and `/auth/callback` skip it, since those must be reachable
-before a session exists at all). This matters: it's what lets an approved user's browser get
-redirected from `/preview` to `/` once you flip their `access` to true — without running the
-check on `/preview` too, that redirect is unreachable and they'd refresh into `/preview` forever
-no matter what you change in Supabase. Don't add `/preview` back to the bypass list.
+**`/preview` is not in `BYPASS_PATHS`** — it still goes through the full auth/access check. This
+matters: it's what lets an approved user's browser get redirected from `/preview` to `/` once you
+flip their `access` to true — without running the check on `/preview` too, that redirect is
+unreachable and they'd refresh into `/preview` forever no matter what you change in Supabase.
+Don't add `/preview` back to the bypass list.
 
 **`PUBLIC_MODE=true`** drops the entire gate — no Google sign-in, no `/preview`, the real site for
 anyone with the URL. It's the first line checked in `middleware.ts`, before anything else runs, so
