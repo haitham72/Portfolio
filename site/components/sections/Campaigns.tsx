@@ -81,12 +81,13 @@ function CampaignRow({ group, baseColor }: { group: CampaignGroup; baseColor: nu
   return (
     <div>
       <div className="mb-4 flex items-center gap-2 text-ui-sm uppercase tracking-tight text-meta"><span>{group.title}</span><span aria-hidden>+</span></div>
-      <div className="flex snap-x snap-mandatory items-start gap-3 overflow-x-auto pb-4">
+      {/* No arrow separators — on a snap-scroll row they read as decoration,
+          not a scroll cue. A tight gap plus letting the next card's edge
+          peek past the viewport is what actually tells a visitor there's
+          more to swipe to. */}
+      <div className="flex snap-x snap-mandatory items-start gap-2 overflow-x-auto pb-4">
         {group.editions.map((edition, i) => (
-          <div key={edition.slug} className="flex shrink-0 items-center gap-3">
-            {i > 0 && <span aria-hidden className="pb-16 text-xl text-text-alt/30 sm:pb-24">&rarr;</span>}
-            <EditionCard edition={edition} colorIndex={baseColor + i} />
-          </div>
+          <EditionCard key={edition.slug} edition={edition} colorIndex={baseColor + i} />
         ))}
       </div>
     </div>

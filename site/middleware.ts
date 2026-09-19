@@ -19,11 +19,16 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
  * access check below so a since-approved user gets bounced to "/" instead
  * of refreshing back into /preview forever (an unconditional bypass here
  * used to make that redirect permanently unreachable — see line ~105).
+ * /privacy and /terms also bypass — they're plain informational pages, not
+ * portfolio work, and Google's OAuth consent screen requires the privacy
+ * policy / ToS links it shows to end users to actually be publicly
+ * reachable; gated versions would just bounce Google's own review and
+ * every visitor straight to /login instead of showing the policy.
  * Static assets under /content/, /_next/*, and favicon.ico never hit this
  * middleware at all (see `config.matcher` below) — gating video byte-range
  * requests would be wasteful and can break seeking.
  */
-const BYPASS_PATHS = ["/login", "/auth/callback"];
+const BYPASS_PATHS = ["/login", "/auth/callback", "/privacy", "/terms"];
 
 // What a brand-new sign-in's `access` starts as. This is an explicit value
 // in the insert below, not the database column's default — changing the
