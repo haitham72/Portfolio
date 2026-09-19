@@ -20,7 +20,7 @@
      reads this variable instead of a hardcoded width). Cards are a fixed
      9:16 ratio, so height always follows width automatically — just edit
      these two, no code changes needed. */
-  --campaign-thumb-w: 220px; /* below 640px (Tailwind's `sm` breakpoint) */
+  --campaign-thumb-w: 150px; /* below 640px (Tailwind's `sm` breakpoint) */
 }
 
 @media (min-width: 640px) {
@@ -146,7 +146,10 @@ body {
   font-size: var(--text-ui);
   letter-spacing: -0.02em;
   box-shadow: none;
-  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
 }
 .btn-pill:focus-visible {
   outline: 2px solid var(--rec);
