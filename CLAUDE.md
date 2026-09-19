@@ -29,6 +29,22 @@ or in the README — don't append session narratives to either.
   the entire gate for everyone, meant as a temporary escape hatch for a specific high-stakes visit
   — see `site/README.md`). If a route unexpectedly returns real content with no redirect, check
   `PUBLIC_MODE` before assuming the gate broke.
+- **Videos are NOT in git, and your local copies are the only backup.** Every `.mp4`/`.webm`/
+  `.mov` under `site/public/content/` is gitignored (28 files, ~186 MB -- they were ~99% of the
+  repo's bytes, and Vercel stored them twice per deployment: once as static assets, once inside
+  the function bundles, because `lib/content.ts` reads the folder with `fs`). They live in a
+  public Supabase Storage bucket named `content`, and `MEDIA_BASE_URL` points every media URL
+  there. **Never `git clean -x` or delete these files assuming git has them -- it doesn't.** The
+  bucket and your disk are the only two copies.
+- **Adding/renaming/removing a video needs a manifest regen.** The build discovers videos by
+  *name* from `site/lib/content-manifest.json` (generated, committed); `safeReaddir()` in
+  `lib/content.ts` merges it into real directory listings, so a deployed checkout with no `.mp4`
+  on disk still renders them. After touching a video, run
+  `node --env-file=.env.local scripts/sync-content-to-supabase.mjs` (uploads + regenerates) or
+  `node scripts/sync-content-to-supabase.mjs --manifest-only` (regenerates only, no network), and
+  **commit the manifest**. Forget this and the new video simply won't appear in production.
+  Poster/cover images stay tracked on purpose -- 13 files, 1.6 MB -- so poster pairing still works
+  off the real filesystem.
 - **All content is real now** — no `meta.json` in the tree is flagged `"stockPlaceholder": true`
   anymore. If you see that flag anywhere, treat it as new/unexpected, not the norm.
 - **One repo now.** This checkout's `origin` *is* `haitham72/Portfolio` on GitHub — the exact repo

@@ -13,6 +13,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import manifest from "./content-manifest.json";
+
 export const CONTENT_ROOT = path.join(process.cwd(), "public", "content");
 
 const NUMBERED = /^(\d+)-(.+)$/;
@@ -27,12 +29,56 @@ export interface OrderedEntry {
   title: string;
 }
 
+// Video files are gitignored — they're ~99% of this repo's bytes and are
+// served from Supabase Storage (see MEDIA_BASE_URL below), so a deployed
+// checkout has the folder structure but not a single .mp4 on disk. The build
+// still needs their *names* to emit a <video src>; it never needs the bytes.
+// content-manifest.json carries exactly those names, and safeReaddir merges
+// them into the real directory listing — which makes this function the one
+// choke point for it, the way toPublicUrl() is for URLs. Every caller
+// (listNumberedFiles, findFirstMedia, findPosterFor, and so every getter plus
+// generateStaticParams) inherits it without knowing it exists.
+//
+// Locally the real files ARE on disk, so those entries dedupe against the
+// manifest and dev behaves exactly as it always has. Regenerate the manifest
+// after adding/removing/renaming a video:
+//   node scripts/sync-content-to-supabase.mjs --manifest-only
+const MANIFEST_VIDEOS: Record<string, string[]> = manifest.videos ?? {};
+
+/** A manifest-only file: exists in the bucket, not on this disk. */
+function virtualFileDirent(name: string): fs.Dirent {
+  return {
+    name,
+    isFile: () => true,
+    isDirectory: () => false,
+    isSymbolicLink: () => false,
+    isBlockDevice: () => false,
+    isCharacterDevice: () => false,
+    isFIFO: () => false,
+    isSocket: () => false,
+  } as unknown as fs.Dirent;
+}
+
+function manifestVideosFor(dir: string): string[] {
+  const rel = path.relative(CONTENT_ROOT, dir).split(path.sep).join("/");
+  // Outside public/content/ entirely — nothing in the manifest applies.
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return [];
+  return MANIFEST_VIDEOS[rel] ?? [];
+}
+
 function safeReaddir(dir: string): fs.Dirent[] {
+  let entries: fs.Dirent[];
   try {
-    return fs.readdirSync(dir, { withFileTypes: true });
+    entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch {
-    return [];
+    entries = [];
   }
+
+  const present = new Set(entries.map((e) => e.name));
+  const missing = manifestVideosFor(dir).filter((name) => !present.has(name));
+  if (missing.length === 0) return entries;
+
+  return [...entries, ...missing.map(virtualFileDirent)];
 }
 
 export function deriveTitle(slug: string): string {

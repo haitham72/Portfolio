@@ -40,3 +40,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# media — videos only, and only under public/content/
+# These are ~186 MB of the repo's ~188 MB of content and are served from
+# Supabase Storage (MEDIA_BASE_URL); committing them re-bundled every byte
+# into every Vercel deployment's static output. Keep them out of git; the
+# build discovers them by name via lib/content-manifest.json.
+# Poster/cover images stay TRACKED on purpose — all 13 of them total 1.6 MB,
+# and keeping them on disk is what lets findPosterFor() keep pairing posters
+# to videos off the real filesystem.
+/public/content/**/*.mp4
+/public/content/**/*.webm
+/public/content/**/*.mov

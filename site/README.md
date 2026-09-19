@@ -145,18 +145,38 @@ Empty folders render a placeholder, never a broken layout — in dev, empty slot
 `"stockPlaceholder": true` anymore. `03-selected-work`'s 3 projects, `04-reels`, and all four
 `08-campaigns` groups (Ramadan, National Day, Eid, UIUX) are real footage.
 
-**Media can be served from Supabase Storage instead of bundled with the app** — set
-`MEDIA_BASE_URL` (see `.env.local.example`) to
-`https://<project-ref>.supabase.co/storage/v1/object/public` and every URL `lib/content.ts`
-returns switches from the local `/content/...` path to that CDN, with no other code change
-(`toPublicUrl()` is the single choke point every media URL flows through). Run
-`node --env-file=.env.local scripts/sync-content-to-supabase.mjs` to mirror `public/content/`
-into a public `content` bucket first (rerunnable — `upsert: true`, only uploads recognized media
-extensions, skips `meta.json`/`README.txt`). Leave `MEDIA_BASE_URL` unset and nothing changes —
-this is currently unset in both local dev and Vercel, so production still serves from its own
-bundled `public/content/` as of this writing. Flipping it also needs `next.config.ts`'s
-`images.remotePatterns` (already wildcarded to `*.supabase.co`, done) — that's only for
-`next/image`, plain `<video>`/`<img>` tags don't need it.
+**Video is served from Supabase Storage, not bundled with the app.** The 28 video files under
+`public/content/` are ~186 MB of this repo's ~188 MB of content, and committing them meant every
+Vercel deployment re-bundled all 186 MB into its static output -- which is what pushed Deployment
+Storage to 7.4 GB. So videos are **gitignored** (`.mp4`/`.webm`/`.mov` under `public/content/`
+only) and live in a public Supabase Storage bucket named `content`. Poster/cover images stay
+tracked on purpose: all 13 of them total 1.6 MB, and keeping them on disk is what lets
+`findPosterFor()` keep pairing posters to videos off the real filesystem.
+
+`MEDIA_BASE_URL` (see `.env.local.example`) must be set to
+`https://<project-ref>.supabase.co/storage/v1/object/public` -- it's what switches every URL
+`lib/content.ts` returns from the local `/content/...` path to that CDN (`toPublicUrl()` is the
+single choke point every media URL flows through). It is set in local `.env.local`, and **must**
+be set on Vercel for both Production and Preview: it's read at build time, so a build without it
+emits `/content/...` paths for files that aren't deployed, and every video silently 404s.
+`next.config.ts`'s `images.remotePatterns` is already wildcarded to `*.supabase.co` -- that's
+only for `next/image`; plain `<video>`/`<img>` tags don't need it.
+
+**Because videos aren't in git, a fresh checkout has the folder structure but no `.mp4` on disk.**
+The build still needs their *names* to emit a `<video src>` (never the bytes), and that's what
+`lib/content-manifest.json` is for -- a generated, committed list of video filenames per folder.
+`safeReaddir()` in `lib/content.ts` merges it into real directory listings, so every getter and
+`generateStaticParams` picks it up without knowing it exists; locally, where the files really are
+on disk, the entries dedupe and nothing changes.
+
+**When you add, remove or rename a video**: drop it in `public/content/` as always, then
+`node --env-file=.env.local scripts/sync-content-to-supabase.mjs` -- it uploads to the bucket
+(rerunnable, `upsert: true`, media extensions only, skips `meta.json`/`README.txt`) *and*
+rewrites the manifest. **Commit the manifest.** Use `--manifest-only` to rewrite the manifest
+without uploading (no credentials, no network). Two guards exist because `upsert: true`
+overwrites unconditionally: 0-byte files are never uploaded and never enter the manifest, and the
+script refuses to write a manifest with *fewer* videos than the committed one (an incomplete
+checkout is likelier than a real deletion) -- pass `--force` when you genuinely did delete one.
 
 ## Architecture
 
