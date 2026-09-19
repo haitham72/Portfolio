@@ -25,7 +25,7 @@
 
 @media (min-width: 640px) {
   :root {
-    --campaign-thumb-w: 280px; /* 640px and up */
+    --campaign-thumb-w: 150px; /* 640px and up */
   }
 }
 
