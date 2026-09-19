@@ -26,3 +26,17 @@ alter table public.users enable row level security;
 -- "access" cell -> it's a checkbox/toggle now (boolean column), not free
 -- text -> check it to grant access. That's the entire admin UI — there's
 -- no in-app dashboard for this by design.
+
+-- Append-only visit log — every real page load, regardless of sign-in
+-- status (runs even in PUBLIC_MODE). bigint identity, not uuid like
+-- `users`: this is a log you count/aggregate, not look up rows in by id.
+-- See migration_002_visits_table.sql's header for example queries.
+create table if not exists public.visits (
+  id bigint generated always as identity primary key,
+  path text not null,
+  ip text,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.visits enable row level security;

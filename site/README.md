@@ -41,6 +41,31 @@ redirected from `/preview` to `/` once you flip their `access` to true — witho
 check on `/preview` too, that redirect is unreachable and they'd refresh into `/preview` forever
 no matter what you change in Supabase. Don't add `/preview` back to the bypass list.
 
+**`PUBLIC_MODE=true`** drops the entire gate — no Google sign-in, no `/preview`, the real site for
+anyone with the URL. It's the first line checked in `middleware.ts`, before anything else runs, so
+it makes `DEFAULT_ACCESS` and the whole access-check logic below it irrelevant while it's on. This
+is for a specific high-stakes visit where Google OAuth's own occasional flakiness (see "Google
+sign-in is finicky" below) is too much risk to put in front of one recipient — it is **not** meant
+to be left on permanently: while it's on, nothing gets written to `users` (no tracking, no
+notification emails), and the whole real site becomes crawlable by search engines were it not for
+the unconditional `noindex` in `app/layout.tsx`'s metadata. Set it in Vercel's env vars and
+redeploy to flip it either direction.
+
+**Google sign-in is finicky, and that's mostly Google, not this code**: a `bad_oauth_state` error
+on `/auth/callback` almost always means the flow got interrupted (a closed tab, an in-app browser
+from a shared link — WhatsApp/LinkedIn/etc.'s built-in webviews are notorious for this) — just
+retry in a normal browser. Separately, Google's OAuth consent screen may show the raw
+`<project-ref>.supabase.co` domain instead of this app's configured name — that's Google's
+anti-phishing behavior for any app whose OAuth callback lands on a domain the developer doesn't
+own (true of every Supabase/Firebase/Auth0-backed app, not a misconfiguration here), and actually
+completing Google's app verification to fix it requires making some public page genuinely explain
+the app without login — which cuts against this project's whole point of not advertising that a
+fuller site exists behind the gate. Decided against pursuing that; the app stays in Google's
+"Testing" publishing status indefinitely. Testing status turned out **not** to block real sign-ins
+for non-test-listed users (verified against actual sign-ups) since this only requests non-sensitive
+scopes (`openid`/`email`/`profile`) — the only real cost is an extra "Google hasn't verified this
+app" click-through and the domain-name display issue above.
+
 **Setup** (all of this needs your own Supabase project + Google Cloud OAuth credentials — I have
 no way to create either for you):
 
@@ -85,7 +110,15 @@ the column default alone does nothing. Leave unset/`false` for real use (new sig
 `/preview`); set `DEFAULT_ACCESS=true` temporarily while testing so you're not hand-approving
 your own throwaway accounts every time — restart the dev server after changing it.
 
-Code: `middleware.ts` (the gate + notification logic), `app/login/`, `app/auth/callback/`,
+**Visit log** — Supabase's `visits` table (`supabase/migration_002_visits_table.sql` for an
+existing project, already folded into `schema.sql` for a fresh one) gets one row per real page
+load — path, IP, user agent, timestamp — written by `middleware.ts` regardless of sign-in status
+or `PUBLIC_MODE`. The `users` table only tells you who currently has access and when they were
+*last* seen (an overwrite, not a history); this is the actual "how many times has this been
+looked at" log. Query it yourself in Supabase's SQL Editor, e.g. `select count(*) from
+public.visits;` or group by `path`/day — no in-app dashboard for this either, same as `access`.
+
+Code: `middleware.ts` (the gate + notification + visit-logging logic), `app/login/`, `app/auth/callback/`,
 `app/preview/`, `lib/supabase/browserClient.ts`, `supabase/*.sql`.
 
 ## Content — filesystem CMS, no code, no restart
