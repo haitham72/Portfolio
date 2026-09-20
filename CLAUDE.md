@@ -35,16 +35,20 @@ in `git log`, not here or in the README — don't append session narratives to e
   `.mov` under `site/public/content/` is gitignored (28 files, ~186 MB -- they were ~99% of the
   repo's bytes, and Vercel stored them twice per deployment: once as static assets, once inside
   the function bundles, because `lib/content.ts` reads the folder with `fs`). They live in a
-  public Supabase Storage bucket named `content`, and `MEDIA_BASE_URL` points every media URL
-  there. **Never `git clean -x` or delete these files assuming git has them -- it doesn't.** The
-  bucket and your disk are the only two copies.
+  public **Vercel Blob** store (`portfolio-blob`), which is billed separately from deployment
+  storage, and `MEDIA_BASE_URL` points every media URL there. **Never `git clean -x` or delete
+  these files assuming git has them -- it doesn't.** The store and your disk are the only two
+  copies. (They're also still in a Supabase `content` bucket from the previous setup; that's a
+  stale copy, not a live dependency.)
 - **Adding/renaming/removing a video needs a manifest regen.** The build discovers videos by
   *name* from `site/lib/content-manifest.json` (generated, committed); `safeReaddir()` in
   `lib/content.ts` merges it into real directory listings, so a deployed checkout with no `.mp4`
   on disk still renders them. After touching a video, run
-  `node --env-file=.env.local scripts/sync-content-to-supabase.mjs` (uploads + regenerates) or
-  `node scripts/sync-content-to-supabase.mjs --manifest-only` (regenerates only, no network), and
+  `node --env-file=.env.local scripts/sync-content-to-blob.mjs` (uploads + regenerates) or
+  `node scripts/sync-content-to-blob.mjs --manifest-only` (regenerates only, no network), and
   **commit the manifest**. Forget this and the new video simply won't appear in production.
+  Uploads carry a one-year `cache-control`, so *replace* a video by giving it a new filename
+  rather than overwriting an existing one.
   Poster/cover images stay tracked on purpose -- 13 files, 1.6 MB -- so poster pairing still works
   off the real filesystem.
 - **All content is real now** — no `meta.json` in the tree is flagged `"stockPlaceholder": true`

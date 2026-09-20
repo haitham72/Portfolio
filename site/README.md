@@ -146,22 +146,26 @@ Empty folders render a placeholder, never a broken layout — in dev, empty slot
 `"stockPlaceholder": true` anymore. `03-selected-work`'s 3 projects, `04-reels`, and all four
 `08-campaigns` groups (Ramadan, National Day, Eid, UIUX) are real footage.
 
-**Video is served from Supabase Storage, not bundled with the app.** The 28 video files under
-`public/content/` are ~186 MB of this repo's ~188 MB of content, and committing them meant every
-Vercel deployment re-bundled all 186 MB into its static output -- which is what pushed Deployment
-Storage to 7.4 GB. So videos are **gitignored** (`.mp4`/`.webm`/`.mov` under `public/content/`
-only) and live in a public Supabase Storage bucket named `content`. Poster/cover images stay
-tracked on purpose: all 13 of them total 1.6 MB, and keeping them on disk is what lets
-`findPosterFor()` keep pairing posters to videos off the real filesystem.
+**Video is served from Vercel Blob, not bundled with the app.** The 28 video files under
+`public/content/` are ~186 MB of this repo's ~188 MB of content. Committing them meant every
+Vercel deployment stored all 186 MB **twice** -- once as static assets, and once inside the
+serverless function bundles, because `lib/content.ts` reads the folder with `fs` and Next's
+tracer packs the whole directory in. Across retained deployments that reached 7.4 GB of
+Deployment Storage and 8.0 GB of Functions Storage against a 10 GB allowance. So videos are
+**gitignored** (`.mp4`/`.webm`/`.mov` under `public/content/` only) and live in a public Vercel
+Blob store (`portfolio-blob`), which is a separate product from deployment storage -- one copy
+stays one copy no matter how many times you deploy. Poster/cover images stay tracked on purpose:
+all 13 total 1.6 MB, and keeping them on disk is what lets `findPosterFor()` keep pairing posters
+to videos off the real filesystem.
 
-`MEDIA_BASE_URL` (see `.env.local.example`) must be set to
-`https://<project-ref>.supabase.co/storage/v1/object/public` -- it's what switches every URL
-`lib/content.ts` returns from the local `/content/...` path to that CDN (`toPublicUrl()` is the
-single choke point every media URL flows through). It is set in local `.env.local`, and **must**
-be set on Vercel for both Production and Preview: it's read at build time, so a build without it
-emits `/content/...` paths for files that aren't deployed, and every video silently 404s.
-`next.config.ts`'s `images.remotePatterns` is already wildcarded to `*.supabase.co` -- that's
-only for `next/image`; plain `<video>`/`<img>` tags don't need it.
+`MEDIA_BASE_URL` (see `.env.local.example`) must be set to the store's origin,
+`https://<store-id>.public.blob.vercel-storage.com` -- it's what switches every URL
+`lib/content.ts` returns from the local `/content/...` path to the Blob CDN (`toPublicUrl()` is
+the single choke point every media URL flows through). It is set in local `.env.local`, and
+**must** be set on Vercel for both Production and Preview: it's read at build time, so a build
+without it emits `/content/...` paths for files that aren't deployed, and every video silently
+404s. `next.config.ts`'s `images.remotePatterns` already allows the Blob host (and still allows
+`*.supabase.co`, so flipping back doesn't break `next/image`).
 
 **Because videos aren't in git, a fresh checkout has the folder structure but no `.mp4` on disk.**
 The build still needs their *names* to emit a `<video src>` (never the bytes), and that's what
@@ -171,12 +175,25 @@ The build still needs their *names* to emit a `<video src>` (never the bytes), a
 on disk, the entries dedupe and nothing changes.
 
 **When you add, remove or rename a video**: drop it in `public/content/` as always, then
-`node --env-file=.env.local scripts/sync-content-to-supabase.mjs` -- it uploads to the bucket
-(rerunnable, `upsert: true`, media extensions only, skips `meta.json`/`README.txt`) *and*
+`node --env-file=.env.local scripts/sync-content-to-blob.mjs` -- it uploads to the store
+(rerunnable, `allowOverwrite: true`, media extensions only, skips `meta.json`/`README.txt`) *and*
 rewrites the manifest. **Commit the manifest.** Use `--manifest-only` to rewrite the manifest
-without uploading (no credentials, no network). Two guards exist because `upsert: true`
-overwrites unconditionally: 0-byte files are never uploaded and never enter the manifest, and the
-script refuses to write a manifest with *fewer* videos than the committed one (an incomplete
+without uploading (no credentials, no network). Uploads set a one-year `cache-control`, so
+**replacing a video should use a new filename** rather than overwriting -- browsers that already
+fetched the old one would keep serving it. The manifest picks up a rename for free.
+
+Two guards exist because the upload overwrites unconditionally: 0-byte files are never uploaded
+and never enter the manifest, and the script refuses to write a manifest with *fewer* videos than
+the committed one (an incomplete checkout is likelier than a real deletion) -- pass `--force`
+when you genuinely did delete one.
+
+**Credentials for the sync script**: `vercel env pull` writes `BLOB_STORE_ID` and
+`VERCEL_OIDC_TOKEN` into `.env.local`, which the Blob SDK uses automatically. That OIDC token is
+short-lived, so if a later run fails to authenticate, run `vercel env pull` again. The store's
+project connection must include the **Development** environment or those variables never arrive
+-- that's the store's **Projects** tab, `...` next to the project, **Update Project Connection**.
+Note that `vercel env pull` **overwrites** `.env.local`, so anything not set on Vercel (including
+`MEDIA_BASE_URL`, if you only set it for Production/Preview) has to be put back by hand.
 checkout is likelier than a real deletion) -- pass `--force` when you genuinely did delete one.
 
 ## Architecture

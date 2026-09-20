@@ -13,6 +13,13 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: "https",
+        hostname: "*.public.blob.vercel-storage.com",
+        pathname: "/**",
+      },
+      // Kept alongside the Blob pattern so flipping MEDIA_BASE_URL back to
+      // Supabase doesn't silently break next/image.
+      {
+        protocol: "https",
         hostname: "*.supabase.co",
         pathname: "/storage/v1/object/public/**",
       },

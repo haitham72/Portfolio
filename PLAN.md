@@ -5,9 +5,11 @@ next person to touch media hosting doesn't re-derive it. The original 433-line b
 reliability plan (design system, autoplay lifecycle, iOS Safari matrix, section checklists)
 is preserved in git: `git show 7b65ed9:PLAN.md`.
 
-## Decision: use Vercel Blob, not Supabase Storage
+## Decision: Vercel Blob, not Supabase Storage — done
 
-Media lives in a Supabase Storage bucket today. If this is revisited, move it to **Vercel Blob**.
+Media lives in a public Vercel Blob store (`portfolio-blob`) as of this writing. It was briefly
+on Supabase Storage; that bucket still holds a stale copy and can be deleted. If media hosting is
+revisited again, the reasoning below is what to weigh — the host is the interchangeable part.
 
 ## Why media must not be committed to the repo at all
 
@@ -36,9 +38,10 @@ stops further accrual but does **not** lower the number until the billing period
   Supabase's free tier is 1 GB storage + 5 GB egress.
 - **Served from Vercel's own CDN**, on the platform the site already runs on — one less vendor,
   one less env var, one less place for the media to silently drift out of sync.
-- **Supabase's objects currently return `Cache-Control: no-cache`**, so nothing caches at
-  Cloudflare's edge and every view re-fetches from origin against that 5 GB. Fixable by
-  re-uploading with a long cache lifetime, but it's a live gotcha as of this writing.
+- **Caching actually works.** Supabase's objects returned `Cache-Control: no-cache`, so nothing
+  cached at Cloudflare's edge and every view re-fetched from origin against that 5 GB. Blob
+  uploads set `public, max-age=31536000` and measure `X-Vercel-Cache: HIT`. Measured TTFB was
+  ~108 ms from the UAE, served out of `bom1`, with range requests (video seeking) working.
 
 ## What to keep regardless of host
 
